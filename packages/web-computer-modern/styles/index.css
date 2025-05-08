@@ -1,0 +1,251 @@
+/** Devanagari 10 */
+@font-face {
+  font-family: "WebCM Devanagari 10";
+  src: url("../woff2/WebCM Devanagari 10 Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Devanagari 10";
+  src: url("../woff2/WebCM Devanagari 10 Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Devanagari 10";
+  src: url("../woff2/WebCM Devanagari 10 Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+/** Devanagari 08 */
+@font-face {
+  font-family: "WebCM Devanagari 08";
+  src: url("../woff2/WebCM Devanagari 08 Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Devanagari 08";
+  src: url("../woff2/WebCM Devanagari 08 Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+/** Sans 10 */
+@font-face {
+  font-family: "WebCM Sans 10";
+  src: url("../woff2/WebCM Sans 10 Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Sans 10";
+  src: url("../woff2/WebCM Sans 10 BoldOblique.woff2") format("woff2");
+  font-weight: 700;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Sans 10";
+  src: url("../woff2/WebCM Sans 10 Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Sans 10";
+  src: url("../woff2/WebCM Sans 10 BookOblique.woff2") format("woff2");
+  font-weight: 500;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Sans 10";
+  src: url("../woff2/WebCM Sans 10 Oblique.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Sans 10";
+  src: url("../woff2/WebCM Sans 10 Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+/** Sans 08 */
+@font-face {
+  font-family: "WebCM Sans 08";
+  src: url("../woff2/WebCM Sans 08 Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Sans 08";
+  src: url("../woff2/WebCM Sans 08 BookOblique.woff2") format("woff2");
+  font-weight: 500;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Sans 08";
+  src: url("../woff2/WebCM Sans 08 Oblique.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Sans 08";
+  src: url("../woff2/WebCM Sans 08 Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+/** Serif 10 */
+@font-face {
+  font-family: "WebCM Serif 10";
+  src: url("../woff2/WebCM Serif 10 Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Serif 10";
+  src: url("../woff2/WebCM Serif 10 BoldItalic.woff2") format("woff2");
+  font-weight: 700;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Serif 10";
+  src: url("../woff2/WebCM Serif 10 Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Serif 10";
+  src: url("../woff2/WebCM Serif 10 BookItalic.woff2") format("woff2");
+  font-weight: 500;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Serif 10";
+  src: url("../woff2/WebCM Serif 10 Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Serif 10";
+  src: url("../woff2/WebCM Serif 10 Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+/** Serif 08 */
+@font-face {
+  font-family: "WebCM Serif 08";
+  src: url("../woff2/WebCM Serif 08 Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Serif 08";
+  src: url("../woff2/WebCM Serif 08 BookItalic.woff2") format("woff2");
+  font-weight: 500;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Serif 08";
+  src: url("../woff2/WebCM Serif 08 Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Serif 08";
+  src: url("../woff2/WebCM Serif 08 Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+/** Math Serif */
+@font-face {
+  font-family: "WebCM Math Serif";
+  src: url("../woff2/WebCM Math Serif Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Math Serif";
+  src: url("../woff2/WebCM Math Serif Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Math Serif";
+  src: url("../woff2/WebCM Math Serif Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+/** Math Sans */
+@font-face {
+  font-family: "WebCM Math Sans";
+  src: url("../woff2/WebCM Math Sans Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+/** Mono 10 */
+@font-face {
+  font-family: "WebCM Mono 10";
+  src: url("../woff2/WebCM Mono 10 Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Mono 10";
+  src: url("../woff2/WebCM Mono 10 BoldOblique.woff2") format("woff2");
+  font-weight: 700;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Mono 10";
+  src: url("../woff2/WebCM Mono 10 Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Mono 10";
+  src: url("../woff2/WebCM Mono 10 BookItalic.woff2") format("woff2");
+  font-weight: 500;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Mono 10";
+  src: url("../woff2/WebCM Mono 10 Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+}
+@font-face {
+  font-family: "WebCM Mono 10";
+  src: url("../woff2/WebCM Mono 10 Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+/** Uncial 10 */
+@font-face {
+  font-family: "WebCM Uncial 10";
+  src: url("../woff2/WebCM Uncial 10 Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Uncial 10";
+  src: url("../woff2/WebCM Uncial 10 Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+/** Uncial 08 */
+@font-face {
+  font-family: "WebCM Uncial 08";
+  src: url("../woff2/WebCM Uncial 08 Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Uncial 08";
+  src: url("../woff2/WebCM Uncial 08 Book.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "WebCM Uncial 08";
+  src: url("../woff2/WebCM Uncial 08 Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}

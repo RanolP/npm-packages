@@ -1,0 +1,69 @@
+# Web Computer Modern
+# Converted: 2025-5-1 Tool: Custom Node.js scripts
+# License: GUST Font LICENSE v1.0 or later (LPPL 1.3c or later)
+#
+# Original FIles: https://mirrors.ctan.org/fonts/newcomputermodern.zip
+Files
+  - woff2/WebCM Devanagari 08 Book.woff2 <- otf/NewCM08Devanagari-Book.otf
+  - woff2/WebCM Devanagari 08 Regular.woff2 <- otf/NewCM08Devanagari-Regular.otf
+  - woff2/WebCM Devanagari 10 Bold.woff2 <- otf/NewCM10Devanagari-Bold.otf
+  - woff2/WebCM Devanagari 10 Book.woff2 <- otf/NewCM10Devanagari-Book.otf
+  - woff2/WebCM Devanagari 10 Regular.woff2 <- otf/NewCM10Devanagari-Regular.otf
+  - woff2/WebCM Math Sans Regular.woff2 <- otf/NewCMSansMath-Regular.otf
+  - woff2/WebCM Math Serif Bold.woff2 <- otf/NewCMMath-Bold.otf
+  - woff2/WebCM Math Serif Book.woff2 <- otf/NewCMMath-Book.otf
+  - woff2/WebCM Math Serif Regular.woff2 <- otf/NewCMMath-Regular.otf
+  - woff2/WebCM Mono 10 Bold.woff2 <- otf/NewCMMono10-Bold.otf
+  - woff2/WebCM Mono 10 BoldOblique.woff2 <- otf/NewCMMono10-BoldOblique.otf
+  - woff2/WebCM Mono 10 Book.woff2 <- otf/NewCMMono10-Book.otf
+  - woff2/WebCM Mono 10 BookItalic.woff2 <- otf/NewCMMono10-BookItalic.otf
+  - woff2/WebCM Mono 10 Italic.woff2 <- otf/NewCMMono10-Italic.otf
+  - woff2/WebCM Mono 10 Regular.woff2 <- otf/NewCMMono10-Regular.otf
+  - woff2/WebCM Sans 08 Book.woff2 <- otf/NewCMSans08-Book.otf
+  - woff2/WebCM Sans 08 BookOblique.woff2 <- otf/NewCMSans08-BookOblique.otf
+  - woff2/WebCM Sans 08 Oblique.woff2 <- otf/NewCMSans08-Oblique.otf
+  - woff2/WebCM Sans 08 Regular.woff2 <- otf/NewCMSans08-Regular.otf
+  - woff2/WebCM Sans 10 Bold.woff2 <- otf/NewCMSans10-Bold.otf
+  - woff2/WebCM Sans 10 BoldOblique.woff2 <- otf/NewCMSans10-BoldOblique.otf
+  - woff2/WebCM Sans 10 Book.woff2 <- otf/NewCMSans10-Book.otf
+  - woff2/WebCM Sans 10 BookOblique.woff2 <- otf/NewCMSans10-BookOblique.otf
+  - woff2/WebCM Sans 10 Oblique.woff2 <- otf/NewCMSans10-Oblique.otf
+  - woff2/WebCM Sans 10 Regular.woff2 <- otf/NewCMSans10-Regular.otf
+  - woff2/WebCM Serif 08 Book.woff2 <- otf/NewCM08-Book.otf
+  - woff2/WebCM Serif 08 BookItalic.woff2 <- otf/NewCM08-BookItalic.otf
+  - woff2/WebCM Serif 08 Italic.woff2 <- otf/NewCM08-Italic.otf
+  - woff2/WebCM Serif 08 Regular.woff2 <- otf/NewCM08-Regular.otf
+  - woff2/WebCM Serif 10 Bold.woff2 <- otf/NewCM10-Bold.otf
+  - woff2/WebCM Serif 10 BoldItalic.woff2 <- otf/NewCM10-BoldItalic.otf
+  - woff2/WebCM Serif 10 Book.woff2 <- otf/NewCM10-Book.otf
+  - woff2/WebCM Serif 10 BookItalic.woff2 <- otf/NewCM10-BookItalic.otf
+  - woff2/WebCM Serif 10 Italic.woff2 <- otf/NewCM10-Italic.otf
+  - woff2/WebCM Serif 10 Regular.woff2 <- otf/NewCM10-Regular.otf
+  - woff2/WebCM Uncial 08 Bold.woff2 <- otf/NewCMUncial08-Bold.otf
+  - woff2/WebCM Uncial 08 Book.woff2 <- otf/NewCMUncial08-Book.otf
+  - woff2/WebCM Uncial 08 Regular.woff2 <- otf/NewCMUncial08-Regular.otf
+  - woff2/WebCM Uncial 08 Regular.woff2 <- otf/NewCMUncial10-Regular.otf
+  - woff2/WebCM Uncial 10 Bold.woff2 <- otf/NewCMUncial10-Bold.otf
+  - woff2/WebCM Uncial 10 Book.woff2 <- otf/NewCMUncial10-Book.otf
+Changes
+  - OTFs converted to WOFF2; glyphs unaltered
+  - Font names renamed to WebCM to avoid clashes (per GFL request).
+And
+  - WebCM Devanagari 08 Book: change font weight from 400 to 500
+  - WebCM Devanagari 10 Bold: change font weight from 400 to 700
+  - WebCM Devanagari 10 Book: change font weight from 400 to 500
+  - WebCM Math Serif Book: change font weight from 400 to 500
+  - WebCM Mono 10 Book: change font weight from 400 to 500
+  - WebCM Mono 10 BookItalic: change font weight from 400 to 500
+  - WebCM Sans 08 Book: change font weight from 400 to 500
+  - WebCM Sans 08 BookOblique: change font weight from 400 to 500
+  - WebCM Sans 10 Book: change font weight from 400 to 500
+  - WebCM Sans 10 BookOblique: change font weight from 400 to 500
+  - WebCM Serif 08 Book: change font weight from 400 to 500
+  - WebCM Serif 08 BookItalic: change font weight from 400 to 500
+  - WebCM Serif 10 Book: change font weight from 400 to 500
+  - WebCM Serif 10 BookItalic: change font weight from 400 to 500
+  - WebCM Uncial 08 Book: change font weight from 400 to 500
+  - WebCM Uncial 10 Book: change font weight from 400 to 500
+Support
+  No warranty or maintenance from the original authors

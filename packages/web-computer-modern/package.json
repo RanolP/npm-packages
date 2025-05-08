@@ -1,0 +1,25 @@
+{
+  "name": "web-computer-modern",
+  "version": "1.1.0-new-cm-7-0-2",
+  "author": "RanolP <me@ranolp.dev>",
+  "type": "module",
+  "license": "GUST Font License",
+  "scripts": {
+    "get:otf": "node scripts/get-otf.js",
+    "build:woff2": "node scripts/build-woff2.js",
+    "build:css": "node scripts/build-css.js",
+    "read:version": "fontforge -quiet -lang=ff -c 'Open($1); Print($fontversion)' 'otf/NewCM10-Regular.otf' 2>/dev/null"
+  },
+  "files": [
+    "woff2",
+    "styles",
+    "README.md",
+    "LICENSE.txt",
+    "MANIFEST-WebCM.txt"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.15.2",
+    "@zip.js/zip.js": "^2.7.60",
+    "typescript": "^5.5.3"
+  }
+}
