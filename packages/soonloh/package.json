@@ -1,0 +1,41 @@
+{
+  "name": "soonloh",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsdown"
+  },
+  "author": "RanolP <me@ranolp.dev>",
+  "license": "MIT",
+  "packageManager": "pnpm@10.10.0",
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "tsdown": "^0.11.1",
+    "typescript": "^5.8.3",
+    "unplugin": "^2.3.2"
+  },
+  "files": [
+    "src/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./builtin-parsers": {
+      "types": "./dist/builtin-parsers/index.d.ts",
+      "import": "./dist/builtin-parsers/index.js"
+    },
+    "./builtin-generators": {
+      "types": "./dist/builtin-generators/index.d.ts",
+      "import": "./dist/builtin-generators/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
+    }
+  }
+}

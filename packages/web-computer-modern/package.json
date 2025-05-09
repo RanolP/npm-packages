@@ -4,6 +4,11 @@
   "author": "RanolP <me@ranolp.dev>",
   "type": "module",
   "license": "GUST Font License",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RanolP/npm-packages",
+    "directory": "packages/web-computer-modern"
+  },
   "scripts": {
     "get:otf": "node scripts/get-otf.js",
     "build:woff2": "node scripts/build-woff2.js",
