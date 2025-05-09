@@ -6,8 +6,8 @@ export const debug: CodeGenerator<CommonSegment> = {
   name: 'soonloh:debug',
   targetPath: () => '',
   generate(paths) {
-    for (const { file, segments } of paths) {
-      console.log('     > ' + file.replaceAll(path.win32.sep, path.posix.sep));
+    for (const { filePosix, segments } of paths) {
+      console.log('     > ' + filePosix);
       for (const segment of segments) {
         console.log('       | ' + JSON.stringify(segment));
       }

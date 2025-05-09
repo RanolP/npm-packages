@@ -1,7 +1,12 @@
 {
   "name": "soonloh",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RanolP/npm-packages",
+    "directory": "packages/soonloh"
+  },
   "scripts": {
     "build": "tsdown"
   },
