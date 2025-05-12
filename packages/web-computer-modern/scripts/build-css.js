@@ -51,7 +51,7 @@ const output = await Promise.all(
       const [family, subfamily, weight] = await new Promise(
         (resolve, reject) => {
           exec(
-            `fontforge -lang=ff -c 'Open($1); Print($familyname); Print(GetTTFName(0x409, 2)); Print(GetOS2Value("Weight"));' ${JSON.stringify(
+            `fontforge -lang=ff -c "Open($1); Print($familyname); Print(GetTTFName(0x409, 2)); Print(GetOS2Value(\\"Weight\\"));" ${JSON.stringify(
               path.join('woff2', fontPath),
             )}`,
             (error, stdout, stderr) => {
@@ -60,7 +60,7 @@ const output = await Promise.all(
                 reject(error);
                 return;
               }
-              resolve(stdout.split('\n').filter(Boolean));
+              resolve(stdout.split(/[\r\n]+/).filter(Boolean));
             },
           );
         },
@@ -72,7 +72,7 @@ const output = await Promise.all(
         '@font-face {',
         `  font-family: ${JSON.stringify(family)};`,
         `  src: url(${JSON.stringify(
-          path.join('..', 'woff2', fontPath),
+          path.posix.join('..', 'woff2', fontPath),
         )}) format("woff2");`,
         `  font-weight: ${weight};`,
         `  font-style: ${isItalic ? 'italic' : 'normal'};`,
@@ -94,7 +94,7 @@ output.toSorted((a, b) => a.name.localeCompare(b.name));
 
 const fullCss = output.map((x) => x.content).join('\n');
 
-await fs.rm('styles', { recursive: true });
+await fs.rm('styles', { recursive: true }).catch(() => {});
 await fs.mkdir('styles', { recursive: true });
 await fs.writeFile('styles/index.css', fullCss, { encoding: 'utf-8' });
 

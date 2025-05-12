@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { exec } from 'node:child_process';
+import path from 'node:path';
 
 const begin = Date.now();
 await fs.rm('woff2', { recursive: true }).catch(() => {});
@@ -43,7 +44,9 @@ await Promise.all(
           break;
         case 'done':
           console.log(`[${++count}/${otfFiles.length}] ${otf} -> ${log.file}`);
-          files.push(`${log.file} <- ${otf}`);
+          files.push(
+            `${log.file} <- ${otf.replaceAll(path.win32.sep, path.posix.sep)}`,
+          );
           break;
       }
     }

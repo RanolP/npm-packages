@@ -2,7 +2,7 @@
   "compilerOptions": {
     "skipLibCheck": true,
     "target": "es2024",
-    "lib": ["ES2023.Array", "ESNext.Array"],
+    "lib": ["ES2021", "ES2023.Array", "ESNext.Array"],
     "module": "NodeNext",
     "moduleResolution": "nodenext",
     "esModuleInterop": true,
