@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { CommonSegment } from '../builtin-common-segment.js';
 import { CodeGenerator } from '../core/config.js';
 
