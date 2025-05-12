@@ -1,0 +1,41 @@
+name: pkg.pr.new
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          cache: 'pnpm'
+
+      - run: pnpm install
+      - run: pnpm build
+      - name: Rewrite History for Changesets
+        id: sekai
+        run: |
+          # For Commit
+          git config user.name "GitHub Actions Bot";
+          git config user.email "<>";
+          # For Fetching Base Branch
+          git fetch origin ${{ github.base_ref }};
+          BASE_REF=$(git rev-parse origin/${{ github.base_ref }});
+          echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT;
+          # Rewrite History
+          HEAD_TREE=$(git rev-parse HEAD^{tree});
+          HASH=$(git commit-tree -p $BASE_REF -m 'rewrite history' $HEAD_TREE);
+          git checkout $HASH;
+      - name: List up Packages with Changesets
+        run: pnpm changeset status --since ${{ steps.sekai.outputs.base_ref }} --output changeset.json
+      - name: Publish Packages with Changesets
+        run: |
+          cat changeset.json \
+          | jq -r '.releases | map(.name) | unique[]' \
+          | xargs -I {} pnpx pkg-pr-new publish --pnpm --packageManager=pnpm packages/{} \
+          ;
