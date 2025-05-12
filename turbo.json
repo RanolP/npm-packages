@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/turbo/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**/*.ts", "src/**/*.ts"],
+      "outputs": ["dist/**"]
+    },
+    "web-computer-modern#generate": {
+      "dependsOn": [
+        "web-computer-modern#get:otf",
+        "web-computer-modern#build:woff2",
+        "web-computer-modern#build:css"
+      ]
+    },
+    "web-computer-modern#build:woff2": {
+      "dependsOn": ["web-computer-modern#get:otf"],
+      "inputs": ["otf/**.otf", "scripts/**/*.js"],
+      "outputs": ["woff2/**"]
+    },
+    "web-computer-modern#build:css": {
+      "dependsOn": ["build:woff2"],
+      "inputs": ["woff/**.woff2", "scripts/**/*.js"],
+      "outputs": ["styles/**"]
+    }
+  }
+}
