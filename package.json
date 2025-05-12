@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "build": "turbo build",
-    "changeset": "changeset"
+    "changeset": "changeset",
+    "ci:publish": "pnpm publish -r && changeset tag",
+    "ci:version": "changeset version"
   },
   "keywords": [],
   "author": "",
