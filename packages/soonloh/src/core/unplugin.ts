@@ -6,13 +6,20 @@ import { setTimeout } from 'node:timers/promises';
 import { Config } from './config.js';
 
 export interface Options {
-  configPath?: string;
+  config?:
+    | {
+        path: string;
+      }
+    | Config;
 }
 class SoonlohPlugin {
   // region Constructor
   #options: Options;
   constructor(options: Options) {
     this.#options = options;
+    if (this.#options.config && !('path' in this.#options.config)) {
+      this.#config = Promise.resolve(this.#options.config);
+    }
   }
   // endregion
 
@@ -21,11 +28,15 @@ class SoonlohPlugin {
     return process.cwd();
   }
   routerRoot: string | null = null;
-  get configPath() {
-    return path.join(
-      this.#root,
-      this.#options.configPath ?? 'soonloh.config.ts',
-    );
+  get configPath(): string | null {
+    if (!this.#options.config || 'path' in this.#options.config) {
+      return path.join(
+        this.#root,
+        this.#options.config?.path ?? 'soonloh.config.ts',
+      );
+    } else {
+      return null;
+    }
   }
   // endregion
 
@@ -36,6 +47,7 @@ class SoonlohPlugin {
 
   async loadConfig() {
     const file = this.configPath;
+    if (typeof file !== 'string') return;
     const href = pathToFileURL(file).href;
     const mtime = (await stat(file)).mtime;
     if (isFileTs(file)) {
@@ -156,7 +168,10 @@ export const unplugin = createUnplugin<Options | undefined>(
         instance.generate();
       },
       watchChange(id, change) {
-        if (path.normalize(instance.configPath) == path.normalize(id)) {
+        if (
+          instance.configPath &&
+          path.normalize(instance.configPath) == path.normalize(id)
+        ) {
           console.log('[soonloh] config file changed, reloading...');
           instance.loadConfig().then(() => instance.generate());
           return;
