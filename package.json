@@ -1,17 +1,11 @@
 {
-  "name": "npm-packages",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
   "scripts": {
     "build": "turbo build",
     "changeset": "changeset",
     "ci:publish": "pnpm publish -r && changeset tag",
     "ci:version": "changeset version"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "packageManager": "pnpm@10.8.1",
   "devDependencies": {
     "@changesets/cli": "^2.29.4",
