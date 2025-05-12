@@ -32,4 +32,5 @@ jobs:
           publish: pnpm run ci:publish
           version: pnpm run ci:version
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
