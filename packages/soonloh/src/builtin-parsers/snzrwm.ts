@@ -43,7 +43,7 @@ export const parser = ({
             : new RegExp(
                 String.raw`^(${terminators.tokens.join('|')}${
                   terminators.allCaps ? '|[A-Z]+' : ''
-                })\.[cm]?[jt]sx?$/`
+                })\.[cm]?[jt]sx?$`
               ),
         escape: /\{(.+?)\}/,
       },
