@@ -1,5 +1,15 @@
 # soonloh
 
+## 0.3.0
+
+### Minor Changes
+
+- 0970e76: Set naming convention for generator & make genLink accept targetPath override
+
+### Patch Changes
+
+- 2beb78e: Expose CommonSegment
+
 ## 0.2.0
 
 ### Minor Changes
