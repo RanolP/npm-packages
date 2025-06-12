@@ -1,0 +1,5 @@
+---
+"soonloh": patch
+---
+
+Expose CommonSegment
