@@ -1,7 +1,7 @@
 import { CommonSegment } from '../builtin-common-segment.js';
 import { CodeGenerator } from '../core/config.js';
 
-export const debug: CodeGenerator<CommonSegment> = {
+export const genDebug: CodeGenerator<CommonSegment> = {
   name: 'soonloh:debug',
   targetPath: () => '',
   generate(paths) {

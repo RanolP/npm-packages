@@ -1,11 +1,14 @@
 import { CommonSegment } from '../builtin-common-segment.js';
 import { CodeGenerator } from '../core/config.js';
 
-export const link: CodeGenerator<CommonSegment> = {
+interface Options {
+  targetPath?: (pathSafeBranch: string) => string;
+}
+export const genLink = ({
+  targetPath = () => 'src/generated/link.ts',
+}: Options): CodeGenerator<CommonSegment> => ({
   name: 'soonloh:link',
-  targetPath() {
-    return 'src/generated/link.ts';
-  },
+  targetPath,
   generate(paths) {
     return [
       'export interface LinkMap {',
@@ -36,7 +39,7 @@ export const link: CodeGenerator<CommonSegment> = {
                         }}${segment.optional ? '?' : ''}`;
                     }
                   })
-                  .join('/'),
+                  .join('/')
             ) +
             (paramProps.length === 0 ? '?: never' : ': {'),
           ...(paramProps.length > 0 ? [...paramProps, '  }'] : []),
@@ -56,7 +59,7 @@ export const link: CodeGenerator<CommonSegment> = {
       '>(key: K, props: LinkMap[K]): string;',
       'export function path<K extends keyof LinkMap>(key: K, props?: LinkMap[K]) {',
       String.raw`  return key.replace(/\{\*?(.+)\}\??/, (_, name) => {`,
-      '    const value = (props as Record<string, string>)[name];',
+      '    const value = ((props ?? {}) as Record<string, string>)[name];',
       `    return Array.isArray(value) ? value.join('/') : value;`,
       '  });',
       '}',
@@ -65,4 +68,4 @@ export const link: CodeGenerator<CommonSegment> = {
       .flat(2)
       .join('\n');
   },
-};
+});
