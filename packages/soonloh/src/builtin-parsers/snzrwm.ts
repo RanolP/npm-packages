@@ -55,3 +55,5 @@ export const parser = createParser({
     },
   }),
 });
+
+export const segments = CommonSegments;
