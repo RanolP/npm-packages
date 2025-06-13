@@ -1,5 +1,17 @@
 # soonloh
 
+## 0.4.0
+
+### Minor Changes
+
+- 751a193: Add configurable terminators on snzrwm parser
+- 1d6cdaf: Add filter option to genLink
+
+### Patch Changes
+
+- ee64816: No write call on no edit
+- bda7e2b: Fix snzrwm parser
+
 ## 0.3.0
 
 ### Minor Changes
