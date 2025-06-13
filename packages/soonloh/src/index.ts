@@ -5,3 +5,4 @@ export * from './core/parser/segmenter.js';
 export * from './core/parser/parser.js';
 export * from './core/types.js';
 export * from './builtin-common-segment.js';
+export * as utils from './utils/index.js';
