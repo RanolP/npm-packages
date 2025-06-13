@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { createUnplugin } from 'unplugin';
-import { stat, readdir, mkdir, writeFile } from 'node:fs/promises';
+import { stat, readdir, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { setTimeout } from 'node:timers/promises';
 import { Config } from './config.js';
@@ -32,7 +32,7 @@ class SoonlohPlugin {
     if (!this.#options.config || 'path' in this.#options.config) {
       return path.join(
         this.#root,
-        this.#options.config?.path ?? 'soonloh.config.ts',
+        this.#options.config?.path ?? 'soonloh.config.ts'
       );
     } else {
       return null;
@@ -56,7 +56,7 @@ class SoonlohPlugin {
       }
     }
     const promise = import(`${href}?t=${mtime}`).then(
-      (module) => module.default as Config,
+      (module) => module.default as Config
     );
     promise.then((config) => {
       this.hasConfigResolved = true;
@@ -72,7 +72,7 @@ class SoonlohPlugin {
         this.#config = Promise.resolve(await promise);
       } catch (e) {
         console.error(
-          '[soonloh] failed to reload config, keep previous one...',
+          '[soonloh] failed to reload config, keep previous one...'
         );
         console.error(e);
       }
@@ -121,8 +121,8 @@ class SoonlohPlugin {
         console.log(
           `[soonloh] ${e}\n                   ${path.join(
             config.routerRoot,
-            fileRaw,
-          )}`,
+            fileRaw
+          )}`
         );
       }
     }
@@ -131,26 +131,32 @@ class SoonlohPlugin {
       config.generators.map(async (generator) => {
         try {
           const generatorBegin = Date.now();
+          /** @todo support per-branch generation */
+          const file = path.join(this.#root, generator.targetPath('main'));
+          const old = await readFile(file, { encoding: 'utf-8' });
+          if (signal.aborted) return;
           const content = await generator.generate(parsedPaths);
           if (signal.aborted) return;
           // it is intentionally not generating
           if (content == null) return;
-          /** @todo support per-branch generation */
-          const file = path.join(this.#root, generator.targetPath('main'));
+          if (old === content) {
+            // do not save
+            return;
+          }
           await mkdir(path.dirname(file), { recursive: true });
           if (signal.aborted) return;
           await writeFile(file, content);
           console.log(
             `[soonloh] ${generator.name} done in ${
               Date.now() - generatorBegin
-            } ms`,
+            } ms`
           );
         } catch (e) {
           console.log(
-            `[soonloh] ${e}\n                   while generating ${generator.name}`,
+            `[soonloh] ${e}\n                   while generating ${generator.name}`
           );
         }
-      }),
+      })
     );
     if (signal.aborted) return;
     console.log(`[soonloh] full codegen in ${Date.now() - begin} ms`);
@@ -183,7 +189,7 @@ export const unplugin = createUnplugin<Options | undefined>(
           instance.generate();
       },
     };
-  },
+  }
 );
 
 // ref: https://github.com/eslint/eslint/blob/60c3e2cf9256f3676b7934e26ff178aaf19c9e97/lib/config/config-loader.js#L85-L129
