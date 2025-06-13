@@ -3,17 +3,33 @@ import { CodeGenerator } from '../core/config.js';
 
 interface Options {
   targetPath?: (pathSafeBranch: string) => string;
+  filter?: (terminator: string | null) => boolean;
 }
 export const genLink = ({
   targetPath = () => 'src/generated/link.ts',
+  filter = () => true,
 }: Options): CodeGenerator<CommonSegment> => ({
   name: 'soonloh:link',
   targetPath,
-  generate(paths) {
+  generate(routes) {
     return [
       'export interface LinkMap {',
-      paths.map((path) => {
-        const paramProps = path.segments.flatMap((segment) => {
+      routes.flatMap((route) => {
+        if (
+          !filter(
+            route.segments.reduce<string | null>(
+              (acc, segment) =>
+                acc == null && segment.kind === 'terminator'
+                  ? segment.path
+                  : acc,
+              null
+            )
+          )
+        ) {
+          return [];
+        }
+
+        const paramProps = route.segments.flatMap((segment) => {
           if (segment.kind !== 'param') return [];
 
           return `    ${JSON.stringify(segment.name)}${
@@ -21,43 +37,45 @@ export const genLink = ({
           }: ${segment.catchall ? 'string[]' : 'string'}`;
         });
         return [
-          `  // ${path.filePosix}`,
-          '  ' +
-            JSON.stringify(
-              '/' +
-                path.segments
-                  .flatMap((segment) => {
-                    switch (segment.kind) {
-                      case 'grouping':
-                      case 'terminator':
-                        return [];
-                      case 'static':
-                        return segment.path;
-                      case 'param':
-                        return `{${segment.catchall ? '*' : ''}${
-                          segment.name
-                        }}${segment.optional ? '?' : ''}`;
-                    }
-                  })
-                  .join('/')
-            ) +
-            (paramProps.length === 0 ? '?: never' : ': {'),
-          ...(paramProps.length > 0 ? [...paramProps, '  }'] : []),
+          [
+            `  // ${route.filePosix}`,
+            '  ' +
+              JSON.stringify(
+                '/' +
+                  route.segments
+                    .flatMap((segment) => {
+                      switch (segment.kind) {
+                        case 'grouping':
+                        case 'terminator':
+                          return [];
+                        case 'static':
+                          return segment.path;
+                        case 'param':
+                          return `{${segment.catchall ? '*' : ''}${
+                            segment.name
+                          }}${segment.optional ? '?' : ''}`;
+                      }
+                    })
+                    .join('/')
+              ) +
+              (paramProps.length === 0 ? '?: never' : ': {'),
+            ...(paramProps.length > 0 ? [...paramProps, '  }'] : []),
+          ],
         ];
       }),
       '};',
       '',
-      'export function path<',
+      'export function link<',
       '  K extends keyof {',
       '    [K in keyof LinkMap as LinkMap[K] extends {} ? never : K]: 1;',
       '  },',
       '>(key: K): string;',
-      'export function path<',
+      'export function link<',
       '  K extends keyof {',
       '    [K in keyof LinkMap as LinkMap[K] extends {} ? K : never]: 1;',
       '  },',
       '>(key: K, props: LinkMap[K]): string;',
-      'export function path<K extends keyof LinkMap>(key: K, props?: LinkMap[K]) {',
+      'export function link<K extends keyof LinkMap>(key: K, props?: LinkMap[K]) {',
       String.raw`  return key.replace(/\{\*?(.+)\}\??/, (_, name) => {`,
       '    const value = ((props ?? {}) as Record<string, string>)[name];',
       `    return Array.isArray(value) ? value.join('/') : value;`,
