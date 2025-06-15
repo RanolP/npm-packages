@@ -1,0 +1,30 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+
+      # For PRs, only test affected packages
+      - name: Test affected packages (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          pnpm exec turbo test --filter="[origin/${{ github.base_ref }}...HEAD]"
+
+      # For pushes to main, run all tests
+      - name: Test all packages (main)
+        if: github.event_name == 'push'
+        run: pnpm test

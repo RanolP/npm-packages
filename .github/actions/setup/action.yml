@@ -1,0 +1,13 @@
+name: 'Setup'
+description: 'Common setup for Node.js and pnpm'
+runs:
+  using: 'composite'
+  steps:
+    - uses: pnpm/action-setup@v4
+      with:
+        run_install: false
+    - uses: actions/setup-node@v4
+      with:
+        cache: 'pnpm'
+    - run: pnpm install
+      shell: bash
