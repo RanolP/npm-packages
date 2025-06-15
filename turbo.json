@@ -6,6 +6,10 @@
       "inputs": ["src/**/*.ts", "src/**/*.ts"],
       "outputs": ["dist/**"]
     },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**/*.ts", "src/**/*.test.ts", "vitest.config.ts"]
+    },
     "web-computer-modern#generate": {
       "dependsOn": [
         "web-computer-modern#get:otf",
