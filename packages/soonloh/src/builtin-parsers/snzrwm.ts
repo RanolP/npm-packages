@@ -53,14 +53,23 @@ export const parser = ({
         }
         if (ctx.index === ctx.length - 1) {
           return token.terminate
-            ? CommonSegments.terminator({ path: token.terminate.text })
+            ? CommonSegments.terminator({
+                raw: token.text,
+                path: token.terminate.text,
+              })
             : CommonSegments.error();
         }
         if (token.escape) {
-          return CommonSegments.static({ path: token.escape.text });
+          return CommonSegments.static({
+            raw: token.text,
+            path: token.escape.text,
+          });
         }
         if (token.grouping) {
-          return CommonSegments.grouping({ name: token.grouping.text });
+          return CommonSegments.grouping({
+            raw: token.text,
+            name: token.grouping.text,
+          });
         }
         let optional = false;
         if (token.optional) {
@@ -69,6 +78,7 @@ export const parser = ({
         }
         if (token.catchallParam) {
           return CommonSegments.param({
+            raw: token.text,
             name: token.catchallParam.text,
             catchall: true,
             optional,
@@ -76,12 +86,13 @@ export const parser = ({
         }
         if (token.param) {
           return CommonSegments.param({
+            raw: token.text,
             name: token.param.text,
             catchall: false,
             optional,
           });
         }
-        return CommonSegments.static({ path: token.text });
+        return CommonSegments.static({ raw: token.text, path: token.text });
       },
     }),
   });

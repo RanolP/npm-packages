@@ -7,21 +7,25 @@ type SegmentMap = {
   string,
   {
     kind?: TypelevelError<'You cannot use `kind` as a property of a Segment'> & {};
+    raw?: TypelevelError<'You cannot use `raw` as a property of a Segment'> & {};
   } & Record<string, PrimitiveTypenames>
 >;
 
 export function createSegment<TSegmentMap extends SegmentMap>(
-  segmentMap: TSegmentMap,
+  segmentMap: TSegmentMap
 ): SegmentBuilder<TSegmentMap> {
   return {
     ...Object.fromEntries(
       Object.keys(segmentMap).map((key) => [
         key,
-        (options) => ({ kind: key, ...options }),
-      ]),
+        (options: Record<string, PrimitiveTypenames>) => ({
+          kind: key,
+          ...options,
+        }),
+      ])
     ),
-    skip: () => ({ kind: 'skip' }),
-    error: () => ({ kind: 'error' }),
+    skip: () => ({ kind: 'skip', raw: '$SKIPPED' }),
+    error: () => ({ kind: 'error', raw: '$ERROR' }),
   } as SegmentBuilder<TSegmentMap>;
 }
 
@@ -31,19 +35,23 @@ export type inferSegment<TBuilder extends SegmentBuilder> =
     : never;
 
 type SegmentBuilder<TSegmentMap extends SegmentMap = {}> = {
-  skip(): { kind: 'skip' };
-  error(): { kind: 'error' };
+  skip(): { kind: 'skip'; raw: '$SKIPPED' };
+  error(): { kind: 'error'; raw: '$ERROR' };
 } & {
   [K in keyof TSegmentMap]: (
-    props: TransformProperties<TSegmentMap[K]> extends infer TProps
+    props: TransformProperties<TSegmentMap[K]> & {
+      raw: string;
+    } extends infer TProps
       ? // type simplify trick
         {
           [K in keyof TProps]: TProps[K];
         }
-      : never,
+      : never
   ) => {
     kind: K;
-  } & TransformProperties<TSegmentMap[K]> extends infer TSegment
+  } & TransformProperties<TSegmentMap[K]> & {
+      raw: string;
+    } extends infer TSegment
     ? // type simplify trick
       {
         [K in keyof TSegment]: TSegment[K];
