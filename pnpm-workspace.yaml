@@ -1,2 +1,10 @@
 packages:
   - packages/*
+  - services/*
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+
+catalog:
+  typescript: 5.8.3
