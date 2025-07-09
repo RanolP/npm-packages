@@ -1,0 +1,36 @@
+{
+  "name": "async-iterator-helpers",
+  "version": "1.0.0",
+  "description": "Utility functions for working with async iterators",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RanolP/npm-packages",
+    "directory": "packages/async-iterator-helpers"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run"
+  },
+  "keywords": ["async", "iterator", "helpers", "utilities"],
+  "author": "RanolP <me@ranolp.dev>",
+  "license": "MIT",
+  "packageManager": "pnpm@10.8.1",
+  "devDependencies": {
+    "tsdown": "^0.12.7",
+    "typescript": "catalog:",
+    "vitest": "^3.2.3"
+  },
+  "files": [
+    "src/index.ts",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  }
+}
