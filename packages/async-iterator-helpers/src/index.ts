@@ -1,5 +1,3 @@
-import { readSync } from "fs";
-
 const DEFAULT_PARALLEL_LIMIT = (() => {
   const envLimit = 'process' in globalThis ? Number(globalThis.process.env.ASYNC_ITERATOR_HELPERS_PARALLEL_LIMIT) : NaN;
   const hardLimit = 100;
