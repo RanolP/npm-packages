@@ -33,6 +33,18 @@ importers:
         specifier: ^3.2.3
         version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.4.2)
 
+  packages/p-abort:
+    devDependencies:
+      tsdown:
+        specifier: ^0.12.7
+        version: 0.12.7(typescript@5.8.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.8.3
+      vitest:
+        specifier: ^3.2.3
+        version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.4.2)
+
   packages/soonloh:
     devDependencies:
       '@types/node':

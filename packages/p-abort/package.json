@@ -1,0 +1,38 @@
+{
+  "name": "p-abort",
+  "version": "0.1.0",
+  "description": "Abortable step-by-step operations",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RanolP/npm-packages",
+    "directory": "packages/p-abort"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "author": "RanolP <me@ranolp.dev>",
+  "license": "MIT",
+  "packageManager": "pnpm@10.10.0",
+  "devDependencies": {
+    "tsdown": "^0.12.7",
+    "typescript": "catalog:",
+    "vitest": "^3.2.3"
+  },
+  "files": [
+    "src/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ]
+}
