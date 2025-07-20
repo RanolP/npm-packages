@@ -99,9 +99,6 @@ export function abortable<TParams extends readonly unknown[], TReturn>(
       cleanupFunctions.push(fn);
     };
 
-    // Backward compatibility - keep defer as alias for cleanup
-    $.defer = $.cleanup;
-
     const runCleanup = () => {
       for (const fn of cleanupFunctions.reverse()) {
         try {
@@ -161,11 +158,6 @@ interface AbortableUtility {
    * @param fn - The cleanup function to register
    */
   cleanup: (fn: () => void) => void;
-
-  /**
-   * @deprecated Use `cleanup` instead. Registers a cleanup function.
-   */
-  defer: (fn: () => void) => void;
 }
 
 /**
