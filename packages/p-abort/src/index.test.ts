@@ -201,19 +201,6 @@ describe('abortable', () => {
     const result = await operation([1, 2, 3]);
     expect(result).toEqual({ ok: true, data: [2, 4, 6] });
   });
-
-  it('should maintain backward compatibility with defer', async () => {
-    const cleanupSpy = vi.fn();
-
-    const operation = abortable(($) => async () => {
-      $.defer(cleanupSpy); // Using deprecated defer method
-      return 'success';
-    });
-
-    const result = await operation();
-    expect(result).toEqual({ ok: true, data: 'success' });
-    expect(cleanupSpy).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('AbortedError', () => {

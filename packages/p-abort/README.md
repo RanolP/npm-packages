@@ -143,9 +143,6 @@ Wraps a function to make it abort-aware. The wrapped function will check for abo
 #### `$.cleanup(fn)`
 Registers a cleanup function to be called when the operation completes or is aborted. Cleanup functions are executed in reverse order of registration (LIFO). Useful for resource cleanup.
 
-#### `$.defer(fn)` (deprecated)
-Alias for `$.cleanup()`. Use `$.cleanup()` instead.
-
 ## Error Handling
 
 When an operation is aborted, any in-progress steps are cancelled and the promise resolves to `{ ok: false }`. Other errors are propagated normally.
