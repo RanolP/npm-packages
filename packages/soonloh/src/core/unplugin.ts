@@ -4,6 +4,9 @@ import { stat, readdir, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { setTimeout } from 'node:timers/promises';
 import { Config } from './config.js';
+import { Route } from './types.js';
+import { createRoutePicker } from './pick/pick.js';
+import { tsParser } from './pick/ts-parser.js';
 
 export interface Options {
   config?:
@@ -100,11 +103,7 @@ class SoonlohPlugin {
     const config = await this.#config;
     if (!routerRoot || !config || signal.aborted) return;
 
-    const parsedPaths: Array<{
-      fileRaw: string;
-      filePosix: string;
-      segments: unknown[];
-    }> = [];
+    const parsedPaths: Array<Route<unknown>> = [];
     let hasError = false;
     for (const fileRaw of await readdir(routerRoot, { recursive: true })) {
       if (signal.aborted) break;
@@ -114,7 +113,13 @@ class SoonlohPlugin {
       try {
         const segments = config.parser(filePosix);
         if (segments) {
-          parsedPaths.push({ fileRaw, filePosix, segments });
+          const fullPath = path.join(routerRoot, fileRaw);
+          const routeBase = { fileRaw: fullPath, filePosix, segments };
+          const route: Route<unknown> = {
+            ...routeBase,
+            pick: createRoutePicker(routeBase),
+          };
+          parsedPaths.push(route);
         }
       } catch (e) {
         hasError = true;
@@ -185,8 +190,11 @@ export const unplugin = createUnplugin<Options | undefined>(
         if (
           !instance.routerRoot ||
           path.normalize(id).startsWith(path.normalize(instance.routerRoot))
-        )
+        ) {
+          // Invalidate TypeScript parser cache for changed files
+          tsParser.invalidateCache(id);
           instance.generate();
+        }
       },
     };
   }
