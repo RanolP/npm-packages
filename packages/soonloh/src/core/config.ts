@@ -1,4 +1,5 @@
 import { Parser } from './parser/parser.js';
+import { Route } from './types.js';
 
 export interface Config<TSegment = unknown> {
   routerRoot: string;
@@ -10,11 +11,7 @@ export interface CodeGenerator<TSegment> {
   name: string;
   targetPath: (pathSafeBranch: string) => string;
   generate: (
-    paths: Array<{
-      fileRaw: string;
-      filePosix: string;
-      segments: Exclude<TSegment, { kind: 'error' | 'skip' }>[];
-    }>,
+    paths: Array<Route<TSegment>>
   ) => string | null | Promise<string | null>;
 }
 
