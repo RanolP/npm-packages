@@ -45,5 +45,11 @@
       "types": "./dist/vite.d.ts",
       "import": "./dist/vite.js"
     }
+  },
+  "dependencies": {
+    "@babel/parser": "^7.28.0",
+    "@babel/preset-typescript": "^7.27.1",
+    "@babel/types": "^7.28.2",
+    "@standard-schema/spec": "^1.0.0"
   }
 }
