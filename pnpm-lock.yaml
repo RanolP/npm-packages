@@ -47,6 +47,10 @@ importers:
 
   packages/soonloh:
     dependencies:
+      unplugin:
+        specifier: ^2.3.2
+        version: 2.3.2
+    devDependencies:
       '@babel/parser':
         specifier: ^7.28.0
         version: 7.28.0
@@ -59,7 +63,6 @@ importers:
       '@standard-schema/spec':
         specifier: ^1.0.0
         version: 1.0.0
-    devDependencies:
       '@types/node':
         specifier: ^24.0.1
         version: 24.0.1
@@ -72,9 +75,6 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.8.3
-      unplugin:
-        specifier: ^2.3.2
-        version: 2.3.2
       vitest:
         specifier: ^3.2.3
         version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.4.2)
