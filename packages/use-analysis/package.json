@@ -1,0 +1,50 @@
+{
+  "name": "@ranolp/use-analysis",
+  "version": "0.0.0",
+  "description": "TypeScript code analysis utilities",
+  "keywords": [],
+  "homepage": "https://github.com/RanolP/npm-packages#readme",
+  "bugs": {
+    "url": "https://github.com/RanolP/npm-packages/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RanolP/npm-packages.git",
+    "directory": "packages/use-analysis"
+  },
+  "license": "MIT",
+  "author": "RanolP <public.ranolp@gmail.com>",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown src --format cjs,esm --bundle",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.3",
+    "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.1",
+    "tsdown": "^0.14.2",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
