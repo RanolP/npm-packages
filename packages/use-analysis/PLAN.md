@@ -16,17 +16,17 @@ Build a TypeScript AST query library optimized for analyzing library usage patte
   - TypeScript config resolution
 
 ### 1.2 Basic QueryResult Class
-- [ ] Create `QueryResult` class structure
-- [ ] Implement `QueryResultElement` interface:
+- [x] Create `QueryResult` class structure
+- [x] Implement `QueryResultElement` interface:
   ```typescript
   interface QueryResultElement {
     node: AstNode;
-    captures: Record<string, AstNode>;
+    captures: Record<string, AstNode | AstNode[] | string | undefined>;
     parent?: QueryResultElement;
     sourceFilePath: string;
   }
   ```
-- [ ] Add async iterator support (`Symbol.asyncIterator`)
+- [x] Add async iterator support (`Symbol.asyncIterator`)
 
 ## Phase 2: Pattern Matching Engine
 

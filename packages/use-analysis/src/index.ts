@@ -2,6 +2,7 @@ import { Project, SourceFile, Node, SyntaxKind } from 'ts-morph'
 
 export { Project, SourceFile, Node, SyntaxKind } from 'ts-morph'
 export { SourceSet, GlobPattern, SourceSetConfig, RECOMMENDED_TSCONFIG } from './SourceSet'
+export { QueryResult, QueryResultElement, AstNode } from './QueryResult'
 
 export function createProject(tsConfigFilePath?: string): Project {
   return new Project({
