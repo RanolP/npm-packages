@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "target": "es2024",
+    "lib": ["ES2024"],
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "esModuleInterop": true,
+    "checkJs": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  },
+  "include": ["src/", "examples/"]
+}

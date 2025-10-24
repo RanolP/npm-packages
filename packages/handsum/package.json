@@ -1,0 +1,37 @@
+{
+  "name": "handsum",
+  "version": "0.1.0",
+  "description": "Handsum utility library",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RanolP/npm-packages",
+    "directory": "packages/handsum"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "author": "RanolP <me@ranolp.dev>",
+  "license": "MIT",
+  "devDependencies": {
+    "tsdown": "^0.12.7",
+    "typescript": "catalog:",
+    "vitest": "^3.2.3"
+  },
+  "files": [
+    "src/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ]
+}
