@@ -58,10 +58,6 @@ importers:
         version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.6.1)
 
   packages/soonloh:
-    dependencies:
-      p-abort:
-        specifier: workspace:^
-        version: link:../p-abort
     devDependencies:
       '@types/node':
         specifier: ^24.0.1
