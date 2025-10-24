@@ -31,7 +31,19 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^3.2.3
-        version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.4.2)
+        version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.6.1)
+
+  packages/handsum:
+    devDependencies:
+      tsdown:
+        specifier: ^0.12.7
+        version: 0.12.7(typescript@5.8.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.8.3
+      vitest:
+        specifier: ^3.2.3
+        version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.6.1)
 
   packages/p-abort:
     devDependencies:
@@ -43,9 +55,13 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^3.2.3
-        version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.4.2)
+        version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.6.1)
 
   packages/soonloh:
+    dependencies:
+      p-abort:
+        specifier: workspace:^
+        version: link:../p-abort
     devDependencies:
       '@types/node':
         specifier: ^24.0.1
@@ -64,7 +80,7 @@ importers:
         version: 2.3.2
       vitest:
         specifier: ^3.2.3
-        version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.4.2)
+        version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.6.1)
 
   packages/web-computer-modern:
     devDependencies:
@@ -82,17 +98,17 @@ importers:
     dependencies:
       '@astrojs/starlight':
         specifier: ^0.34.4
-        version: 0.34.4(astro@5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3))
+        version: 0.34.4(astro@5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3))
       astro:
         specifier: ^5.6.1
-        version: 5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3)
+        version: 5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3)
       sharp:
         specifier: ^0.32.5
         version: 0.32.6
     devDependencies:
       astro-d2:
         specifier: ^0.8.0
-        version: 0.8.0(astro@5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3))
+        version: 0.8.0(astro@5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3))
 
 packages:
 
@@ -1604,6 +1620,10 @@ packages:
     resolution: {integrity: sha512-rg9zJN+G4n2nfJl5MW3BMygZX56zKPNVEYYqq7adpmMh4Jn2QNEwhvQlFy6jPVdcod7txZtKHWnyZiA3a0zP7A==}
     hasBin: true
 
+  jiti@2.6.1:
+    resolution: {integrity: sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==}
+    hasBin: true
+
   js-tokens@9.0.1:
     resolution: {integrity: sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ==}
 
@@ -2816,12 +2836,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@astrojs/mdx@4.3.0(astro@5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3))':
+  '@astrojs/mdx@4.3.0(astro@5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3))':
     dependencies:
       '@astrojs/markdown-remark': 6.3.2
       '@mdx-js/mdx': 3.1.0(acorn@8.14.1)
       acorn: 8.14.1
-      astro: 5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3)
+      astro: 5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3)
       es-module-lexer: 1.7.0
       estree-util-visit: 2.0.0
       hast-util-to-html: 9.0.5
@@ -2845,17 +2865,17 @@ snapshots:
       stream-replace-string: 2.0.0
       zod: 3.25.76
 
-  '@astrojs/starlight@0.34.4(astro@5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3))':
+  '@astrojs/starlight@0.34.4(astro@5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3))':
     dependencies:
       '@astrojs/markdown-remark': 6.3.2
-      '@astrojs/mdx': 4.3.0(astro@5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3))
+      '@astrojs/mdx': 4.3.0(astro@5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3))
       '@astrojs/sitemap': 3.4.1
       '@pagefind/default-ui': 1.3.0
       '@types/hast': 3.0.4
       '@types/js-yaml': 4.0.9
       '@types/mdast': 4.0.4
-      astro: 5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3)
-      astro-expressive-code: 0.41.3(astro@5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3))
+      astro: 5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3)
+      astro-expressive-code: 0.41.3(astro@5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3))
       bcp-47: 2.1.0
       hast-util-from-html: 2.0.3
       hast-util-select: 6.0.4
@@ -3588,13 +3608,13 @@ snapshots:
       chai: 5.2.0
       tinyrainbow: 2.0.0
 
-  '@vitest/mocker@3.2.3(vite@6.3.5(@types/node@24.0.1)(jiti@2.4.2))':
+  '@vitest/mocker@3.2.3(vite@6.3.5(@types/node@24.0.1)(jiti@2.6.1))':
     dependencies:
       '@vitest/spy': 3.2.3
       estree-walker: 3.0.3
       magic-string: 0.30.17
     optionalDependencies:
-      vite: 6.3.5(@types/node@24.0.1)(jiti@2.4.2)
+      vite: 6.3.5(@types/node@24.0.1)(jiti@2.6.1)
 
   '@vitest/pretty-format@3.2.3':
     dependencies:
@@ -3625,7 +3645,7 @@ snapshots:
       sirv: 3.0.1
       tinyglobby: 0.2.14
       tinyrainbow: 2.0.0
-      vitest: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.4.2)
+      vitest: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.6.1)
     optional: true
 
   '@vitest/utils@3.2.3':
@@ -3684,19 +3704,19 @@ snapshots:
 
   astring@1.9.0: {}
 
-  astro-d2@0.8.0(astro@5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3)):
+  astro-d2@0.8.0(astro@5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3)):
     dependencies:
-      astro: 5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3)
+      astro: 5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3)
       hast-util-from-html: 2.0.3
       hast-util-to-html: 9.0.5
       unist-util-visit: 5.0.0
 
-  astro-expressive-code@0.41.3(astro@5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3)):
+  astro-expressive-code@0.41.3(astro@5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3)):
     dependencies:
-      astro: 5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3)
+      astro: 5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3)
       rehype-expressive-code: 0.41.3
 
-  astro@5.11.0(@types/node@24.0.1)(jiti@2.4.2)(rollup@4.43.0)(typescript@5.8.3):
+  astro@5.11.0(@types/node@24.0.1)(jiti@2.6.1)(rollup@4.43.0)(typescript@5.8.3):
     dependencies:
       '@astrojs/compiler': 2.12.2
       '@astrojs/internal-helpers': 0.6.1
@@ -3751,8 +3771,8 @@ snapshots:
       unist-util-visit: 5.0.0
       unstorage: 1.16.0
       vfile: 6.0.3
-      vite: 6.3.5(@types/node@24.0.1)(jiti@2.4.2)
-      vitefu: 1.1.1(vite@6.3.5(@types/node@24.0.1)(jiti@2.4.2))
+      vite: 6.3.5(@types/node@24.0.1)(jiti@2.6.1)
+      vitefu: 1.1.1(vite@6.3.5(@types/node@24.0.1)(jiti@2.6.1))
       xxhash-wasm: 1.1.0
       yargs-parser: 21.1.1
       yocto-spinner: 0.2.3
@@ -4530,6 +4550,9 @@ snapshots:
   isexe@2.0.0: {}
 
   jiti@2.4.2: {}
+
+  jiti@2.6.1:
+    optional: true
 
   js-tokens@9.0.1: {}
 
@@ -5950,13 +5973,13 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.2
 
-  vite-node@3.2.3(@types/node@24.0.1)(jiti@2.4.2):
+  vite-node@3.2.3(@types/node@24.0.1)(jiti@2.6.1):
     dependencies:
       cac: 6.7.14
       debug: 4.4.1
       es-module-lexer: 1.7.0
       pathe: 2.0.3
-      vite: 6.3.5(@types/node@24.0.1)(jiti@2.4.2)
+      vite: 6.3.5(@types/node@24.0.1)(jiti@2.6.1)
     transitivePeerDependencies:
       - '@types/node'
       - jiti
@@ -5971,7 +5994,7 @@ snapshots:
       - tsx
       - yaml
 
-  vite@6.3.5(@types/node@24.0.1)(jiti@2.4.2):
+  vite@6.3.5(@types/node@24.0.1)(jiti@2.6.1):
     dependencies:
       esbuild: 0.25.5
       fdir: 6.4.4(picomatch@4.0.2)
@@ -5982,17 +6005,17 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.0.1
       fsevents: 2.3.3
-      jiti: 2.4.2
+      jiti: 2.6.1
 
-  vitefu@1.1.1(vite@6.3.5(@types/node@24.0.1)(jiti@2.4.2)):
+  vitefu@1.1.1(vite@6.3.5(@types/node@24.0.1)(jiti@2.6.1)):
     optionalDependencies:
-      vite: 6.3.5(@types/node@24.0.1)(jiti@2.4.2)
+      vite: 6.3.5(@types/node@24.0.1)(jiti@2.6.1)
 
-  vitest@3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.4.2):
+  vitest@3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.6.1):
     dependencies:
       '@types/chai': 5.2.2
       '@vitest/expect': 3.2.3
-      '@vitest/mocker': 3.2.3(vite@6.3.5(@types/node@24.0.1)(jiti@2.4.2))
+      '@vitest/mocker': 3.2.3(vite@6.3.5(@types/node@24.0.1)(jiti@2.6.1))
       '@vitest/pretty-format': 3.2.3
       '@vitest/runner': 3.2.3
       '@vitest/snapshot': 3.2.3
@@ -6010,8 +6033,8 @@ snapshots:
       tinyglobby: 0.2.14
       tinypool: 1.1.0
       tinyrainbow: 2.0.0
-      vite: 6.3.5(@types/node@24.0.1)(jiti@2.4.2)
-      vite-node: 3.2.3(@types/node@24.0.1)(jiti@2.4.2)
+      vite: 6.3.5(@types/node@24.0.1)(jiti@2.6.1)
+      vite-node: 3.2.3(@types/node@24.0.1)(jiti@2.6.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/debug': 4.1.12
