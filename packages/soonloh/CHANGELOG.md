@@ -1,5 +1,11 @@
 # soonloh
 
+## 0.4.1
+
+### Patch Changes
+
+- 60dd99e: Add makeRouteTree util function
+
 ## 0.4.0
 
 ### Minor Changes
