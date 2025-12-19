@@ -23,7 +23,6 @@
   },
   "author": "RanolP <me@ranolp.dev>",
   "license": "MIT",
-  "packageManager": "pnpm@10.10.0",
   "devDependencies": {
     "tsdown": "^0.12.7",
     "typescript": "catalog:",
