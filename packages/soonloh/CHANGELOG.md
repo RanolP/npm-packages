@@ -1,5 +1,11 @@
 # soonloh
 
+## 0.4.2
+
+### Patch Changes
+
+- e3f719d: fix unplugin dependency on soonloh
+
 ## 0.4.1
 
 ### Patch Changes
