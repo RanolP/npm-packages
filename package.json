@@ -4,7 +4,7 @@
     "build": "turbo build",
     "test": "turbo test",
     "changeset": "changeset",
-    "ci:publish": "pnpm publish -r && changeset tag",
+    "ci:publish": "pnpm publish -r --provenance && changeset tag",
     "ci:version": "changeset version"
   },
   "packageManager": "pnpm@10.8.1",
