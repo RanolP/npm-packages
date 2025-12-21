@@ -46,5 +46,8 @@
   },
   "dependencies": {
     "unplugin": "^2.3.11"
+  },
+  "publishConfig": {
+    "provenance": true
   }
 }
