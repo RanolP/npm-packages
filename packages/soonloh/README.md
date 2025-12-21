@@ -25,14 +25,14 @@ A code generator companion for routers featuring build tool/framework-agnostic t
 1. Add `soonloh.config.ts`.
 
    ```ts
-   import soonloh from 'soonloh';
+   import * as soonloh from 'soonloh';
    import { snzrwm } from 'soonloh/builtin-parsers';
-   import { link } from 'soonloh/builtin-generators';
+   import { genLink } from 'soonloh/builtin-generators';
 
    export default soonloh.config({
      routerRoot: 'src/app/',
-     parser: snzrwm.parser,
-     generators: [link],
+     parser: snzrwm.parser({}),
+     generators: [genLink({})],
    });
    ```
 
