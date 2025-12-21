@@ -16,12 +16,11 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 jobs:
   release:
     name: Release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: pnpm build
-      - run: npm --version
 
       - name: Create Release Pull Request
         uses: changesets/action@v1
