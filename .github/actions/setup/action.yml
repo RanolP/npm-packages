@@ -3,11 +3,9 @@ description: 'Common setup for Node.js and pnpm'
 runs:
   using: 'composite'
   steps:
-    - uses: pnpm/action-setup@v4
+    - uses: jdx/mise-action@v3
       with:
-        run_install: false
-    - uses: actions/setup-node@v4
-      with:
-        cache: 'pnpm'
+        version: 2025.11.4
+        cache: true
     - run: pnpm install
       shell: bash

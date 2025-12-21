@@ -18,13 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - name: Verify OIDC Token Presence
-        run: |
-          if [ -z "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
-            echo "::error::OIDC Token not found! You must set 'permissions: id-token: write'."
-            exit 1
-          fi
-          echo "✅ OIDC Request Token is present."
       - run: pnpm build
       - name: Create Release Pull Request
         uses: changesets/action@v1
