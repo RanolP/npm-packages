@@ -5,7 +5,7 @@ runs:
   steps:
     - uses: jdx/mise-action@v3
       with:
-        version: 2025.11.4
+        version: 2025.12.12
         cache: true
     - run: pnpm install
       shell: bash
