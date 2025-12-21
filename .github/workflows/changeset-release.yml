@@ -4,17 +4,15 @@ on:
   push:
     branches:
       - main
-
-permissions:
-  id-token: write
-  contents: write
-  pull-requests: write
-  packages: write
-
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
   release:
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      packages: write
     name: Release
     runs-on: ubuntu-24.04
     steps:
@@ -29,4 +27,3 @@ jobs:
           version: pnpm run ci:version
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
