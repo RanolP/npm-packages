@@ -59,6 +59,9 @@ importers:
 
   packages/soonloh:
     dependencies:
+      p-abort:
+        specifier: workspace:^
+        version: link:../p-abort
       unplugin:
         specifier: ^2.3.11
         version: 2.3.11
