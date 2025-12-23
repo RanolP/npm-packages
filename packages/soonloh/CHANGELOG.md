@@ -1,5 +1,12 @@
 # soonloh
 
+## 0.4.4
+
+### Patch Changes
+
+- Updated dependencies [54292b2]
+  - p-abort@0.2.1
+
 ## 0.4.3
 
 ### Patch Changes
