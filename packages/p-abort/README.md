@@ -110,6 +110,20 @@ const processData = abortable($ => async (items: string[]) => {
 });
 ```
 
+### Parallel Operations
+
+Use `$.all()` to run multiple operations in parallel while maintaining abort capability:
+
+```typescript
+const parallelFetch = abortable($ => async (ids: string[]) => {
+  // Fetch all data in parallel
+  const promises = ids.map(id => $(fetchData(id)));
+  const results = await $.all(promises);
+  
+  return results;
+});
+```
+
 ## API
 
 ### `abortable(fn)`
@@ -143,23 +157,46 @@ Wraps a function to make it abort-aware. The wrapped function will check for abo
 #### `$.cleanup(fn)`
 Registers a cleanup function to be called when the operation completes or is aborted. Cleanup functions are executed in reverse order of registration (LIFO). Useful for resource cleanup.
 
-## Error Handling
+#### `$.all(array)`
+Wraps multiple promises in a Promise.all-like operation. All promises become abort-aware and the entire operation can be cancelled.
 
-When an operation is aborted, any in-progress steps are cancelled and the promise resolves to `{ ok: false }`. Other errors are propagated normally.
+#### `$.abort()`
+Manually aborts the current operation from within the operation function.
+
+### `runAbortable(fn)`
+
+Creates and immediately runs an abortable operation without parameters.
+
+#### Parameters
+
+- `fn`: A function that receives the `$` utility and returns a value or promise
+
+#### Returns
+
+An `AbortableTask` that can be aborted and resolves to a result object.
 
 ```typescript
-const operation = abortable($ => async () => {
-  try {
-    const result = await $(someAsyncOperation());
-    return result;
-  } catch (error) {
-    if (error instanceof AbortedError) {
-      console.log('Operation was cancelled');
-    }
-    throw error;
-  }
+import { runAbortable } from 'p-abort';
+
+const task = runAbortable(async $ => {
+  const data = await $(fetchData());
+  return data;
 });
+
+// Can abort the task
+task.abort();
+
+const result = await task;
+if (result.ok) {
+  console.log('Result:', result.data);
+} else {
+  console.log('Task was aborted');
+}
 ```
+
+## Error Handling
+
+When an operation is aborted, any in-progress steps are cancelled and the promise resolves to `{ ok: false }`. Other errors are propagated normally. You don't need to manually handle `AbortedError` as it's handled internally.
 
 ## Advanced Usage
 

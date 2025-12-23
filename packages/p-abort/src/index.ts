@@ -49,10 +49,10 @@ export function abortable<TParams extends readonly unknown[], TReturn>(
     /**
      * Abort-aware utility for wrapping promises and functions.
      */
-    function $<UReturn>(
-      value: NotFunction<PromiseLike<UReturn> | UReturn>,
-    ): Promise<UReturn>;
-    function $<UReturn, UParams extends readonly unknown[]>(
+    function $<const UReturn>(
+      value: NotFunction<UReturn>,
+    ): Promise<Awaited<UReturn>>;
+    function $<const UReturn, UParams extends readonly unknown[]>(
       g: (...params: UParams) => UReturn | PromiseLike<UReturn>,
     ): (...params: UParams) => Promise<UReturn>;
     function $<UReturn, UParams extends readonly unknown[]>(
@@ -99,6 +99,15 @@ export function abortable<TParams extends readonly unknown[], TReturn>(
       cleanupFunctions.push(fn);
     };
 
+    $.abort = () => {
+      control.abort();
+    };
+
+    $.all = <T extends readonly unknown[] | []>(params: T) =>
+      Promise.all<T>(params.map((p) => $(p))) as Promise<{
+        -readonly [P in keyof T]: Awaited<T[P]>;
+      }>;
+
     const runCleanup = () => {
       for (const fn of cleanupFunctions.reverse()) {
         try {
@@ -130,6 +139,12 @@ export function abortable<TParams extends readonly unknown[], TReturn>(
   };
 }
 
+export function runAbortable<TReturn>(
+  fn: ($: AbortableUtility) => TReturn | PromiseLike<TReturn>,
+): AbortableTask<TReturn> {
+  return abortable(($) => () => fn($))();
+}
+
 /**
  * Utility interface for abort-aware operations.
  */
@@ -139,9 +154,7 @@ interface AbortableUtility {
    * @param value - The promise or value to wrap
    * @returns A promise that can be aborted
    */
-  <UReturn>(
-    value: NotFunction<PromiseLike<UReturn> | UReturn>,
-  ): Promise<UReturn>;
+  <UReturn>(value: NotFunction<UReturn>): Promise<Awaited<UReturn>>;
 
   /**
    * Wraps a function to make it abort-aware.
@@ -158,6 +171,12 @@ interface AbortableUtility {
    * @param fn - The cleanup function to register
    */
   cleanup: (fn: () => void) => void;
+
+  abort: () => void;
+
+  all: <T extends readonly unknown[] | []>(
+    array: T,
+  ) => Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }>;
 }
 
 /**
@@ -165,6 +184,10 @@ interface AbortableUtility {
  */
 type AbortableOperation<TParams extends readonly unknown[], TReturn> = (
   ...params: TParams
-) => Promise<{ ok: true; data: TReturn } | { ok: false }> & {
+) => AbortableTask<TReturn>;
+
+export type AbortableTask<TReturn> = Promise<
+  { ok: true; data: TReturn } | { ok: false }
+> & {
   abort: () => void;
 };
