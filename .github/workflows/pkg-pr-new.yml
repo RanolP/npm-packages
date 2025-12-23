@@ -29,5 +29,5 @@ jobs:
         run: |
           cat changeset.json \
           | jq -r '.releases | map(.name) | unique[]' \
-          | xargs -I {} pnpx pkg-pr-new publish --pnpm --packageManager=pnpm packages/{} \
+          | xargs -I {} pnpm dlx pkg-pr-new publish --pnpm --packageManager=pnpm packages/{} \
           ;
