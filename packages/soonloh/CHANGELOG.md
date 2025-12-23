@@ -1,5 +1,11 @@
 # soonloh
 
+## 0.4.3
+
+### Patch Changes
+
+- 76208a6: tiny refactoring & resolved path as param
+
 ## 0.4.2
 
 ### Patch Changes
