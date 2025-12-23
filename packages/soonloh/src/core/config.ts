@@ -11,7 +11,8 @@ export interface CodeGenerator<TSegment> {
   name: string;
   targetPath: (pathSafeBranch: string) => string;
   generate: (
-    paths: Array<Route<TSegment>>
+    paths: Array<Route<TSegment>>,
+    resolvedTargetPath: string,
   ) => string | null | Promise<string | null>;
 }
 

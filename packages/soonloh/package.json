@@ -45,6 +45,7 @@
     }
   },
   "dependencies": {
+    "p-abort": "workspace:^",
     "unplugin": "^2.3.11"
   }
 }
