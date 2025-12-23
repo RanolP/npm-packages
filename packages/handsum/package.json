@@ -33,8 +33,5 @@
     "dist/",
     "LICENSE",
     "README.md"
-  ],
-  "publishConfig": {
-    "provenance": true
-  }
+  ]
 }
