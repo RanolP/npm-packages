@@ -1,5 +1,11 @@
 # soonloh
 
+## 0.5.0
+
+### Minor Changes
+
+- 16fdec8: expose soonloh/rt
+
 ## 0.4.4
 
 ### Patch Changes
