@@ -1,5 +1,11 @@
 # soonloh
 
+## 0.5.1
+
+### Patch Changes
+
+- 68d6053: more type-safe rt
+
 ## 0.5.0
 
 ### Minor Changes
