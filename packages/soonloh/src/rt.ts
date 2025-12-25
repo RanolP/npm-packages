@@ -2,14 +2,16 @@ import path from 'node:path';
 import { Config } from './core/config.js';
 import { readdir, stat } from 'fs/promises';
 
-export function createSoonlohRuntime(config: Config) {
+export function createSoonlohRuntime<TSegment = unknown>(
+  config: Config<TSegment>,
+) {
   const routerRoot = config.routerRoot;
   return {
     async routes() {
       const routes: Array<{
         fileRaw: string;
         filePosix: string;
-        segments: unknown[];
+        segments: TSegment[];
       }> = [];
       for (const fileRaw of await readdir(routerRoot, { recursive: true })) {
         const toSkip = await stat(path.join(routerRoot, fileRaw))
