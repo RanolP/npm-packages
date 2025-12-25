@@ -22,8 +22,8 @@ export const genLink = ({
                 acc == null && segment.kind === 'terminator'
                   ? segment.path
                   : acc,
-              null
-            )
+              null,
+            ),
           )
         ) {
           return [];
@@ -56,7 +56,7 @@ export const genLink = ({
                           }}${segment.optional ? '?' : ''}`;
                       }
                     })
-                    .join('/')
+                    .join('/'),
               ) +
               (paramProps.length === 0 ? '?: never' : ': {'),
             ...(paramProps.length > 0 ? [...paramProps, '  }'] : []),

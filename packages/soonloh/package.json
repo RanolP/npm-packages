@@ -42,6 +42,10 @@
     "./vite": {
       "types": "./dist/vite.d.ts",
       "import": "./dist/vite.js"
+    },
+    "./rt": {
+      "types": "./dist/rt.d.ts",
+      "import": "./dist/rt.js"
     }
   },
   "dependencies": {

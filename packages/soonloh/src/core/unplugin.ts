@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { setTimeout } from 'node:timers/promises';
 import { Config } from './config.js';
 import { AbortableTask, AbortedError, runAbortable } from 'p-abort';
+import { createSoonlohRuntime } from '../rt.js';
 
 export interface Options {
   config?:
@@ -82,16 +83,12 @@ class SoonlohPlugin {
   // endregion
 
   // region Generate
-  #controller = new AbortController();
-
   #generateTask: AbortableTask<void> | undefined;
   async generate() {
     this.#generateTask?.abort();
     this.#generateTask = runAbortable(async ($) => {
       const begin = Date.now();
-      this.#controller.abort();
-      this.#controller = new AbortController();
-      const signal = this.#controller.signal;
+      this.#generateTask?.abort();
 
       // debounce
       await $(setTimeout(10));
@@ -103,34 +100,8 @@ class SoonlohPlugin {
       const config = await $(this.#config);
       if (!routerRoot || !config) return;
 
-      const parsedPaths: Array<{
-        fileRaw: string;
-        filePosix: string;
-        segments: unknown[];
-      }> = [];
-      let hasError = false;
-      for (const fileRaw of await readdir(routerRoot, { recursive: true })) {
-        if ((await $(stat(path.join(routerRoot, fileRaw)))).isDirectory())
-          continue;
-
-        const filePosix = fileRaw.replaceAll(path.win32.sep, path.posix.sep);
-        try {
-          const segments = config.parser(filePosix);
-          if (segments) {
-            parsedPaths.push({ fileRaw, filePosix, segments });
-          }
-        } catch (e) {
-          if (e instanceof AbortedError) return;
-          hasError = true;
-          console.log(
-            `[soonloh] ${e}\n                   ${path.join(
-              config.routerRoot,
-              fileRaw,
-            )}`,
-          );
-        }
-      }
-      if (hasError) return;
+      const rt = createSoonlohRuntime(config);
+      const routes = await rt.routes();
       await $.all(
         config.generators.map(async (generator) => {
           try {
@@ -140,7 +111,7 @@ class SoonlohPlugin {
             const old = await readFile(file, { encoding: 'utf-8' }).catch(
               () => '',
             );
-            const content = await $(generator.generate(parsedPaths, file));
+            const content = await $(generator.generate(routes, file));
             // it is intentionally not generating
             if (content == null) return;
             if (old === content) {
