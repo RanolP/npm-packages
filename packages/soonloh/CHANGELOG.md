@@ -1,5 +1,11 @@
 # soonloh
 
+## 0.5.2
+
+### Patch Changes
+
+- 423c9e5: better type support on parser
+
 ## 0.5.1
 
 ### Patch Changes
