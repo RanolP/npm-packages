@@ -1,0 +1,48 @@
+{
+  "name": "unplugin-pick",
+  "version": "0.0.1",
+  "description": "import 'file?pick=a,b,c' and get DCE",
+  "type": "module",
+  "exports": {
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RanolP/npm-packages",
+    "directory": "packages/unplugin-pick"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test:watch": "vitest",
+    "test": "vitest run"
+  },
+  "author": "RanolP <me@ranolp.dev>",
+  "license": "MIT",
+  "devDependencies": {
+    "oxc-parser": "^0.104.0",
+    "tsdown": "^0.12.7",
+    "typescript": "catalog:",
+    "vitest": "^3.2.3"
+  },
+  "files": [
+    "src/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "oxc-parser": "^0.104.0"
+  },
+  "peerDependenciesMeta": {
+    "oxc-parser": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "magic-string": "^0.30.21",
+    "unplugin": "^2.3.11"
+  }
+}
