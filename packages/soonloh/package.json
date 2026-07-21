@@ -43,6 +43,10 @@
       "types": "./dist/vite.d.ts",
       "import": "./dist/vite.js"
     },
+    "./metro": {
+      "types": "./dist/metro.d.ts",
+      "import": "./dist/metro.js"
+    },
     "./rt": {
       "types": "./dist/rt.d.ts",
       "import": "./dist/rt.js"

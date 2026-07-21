@@ -21,6 +21,25 @@ A code generator companion for routers featuring build tool/framework-agnostic t
    ```
 
    </details>
+   <details>
+   <summary>Metro (React Native / Expo)</summary>
+
+   Metro has no unplugin adapter, so soonloh ships a small config wrapper
+   instead. It runs codegen before the first bundle and, in dev, watches the
+   router root to regenerate live.
+
+   ```js
+   // metro.config.js
+   const { getDefaultConfig } = require('expo/metro-config'); // or '@react-native/metro-config'
+   const withSoonloh = require('soonloh/metro').default;
+
+   module.exports = withSoonloh(getDefaultConfig(__dirname));
+   ```
+
+   Watching defaults to on unless `NODE_ENV === 'production'`; pass
+   `withSoonloh(config, { watch: false })` to force one-shot generation.
+
+   </details>
 
 1. Add `soonloh.config.ts`.
 

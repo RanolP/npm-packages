@@ -7,6 +7,7 @@ export default defineConfig({
     './src/builtin-parsers',
     './src/builtin-generators',
     './src/vite',
+    './src/metro',
     './src/rt',
   ],
 
