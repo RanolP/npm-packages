@@ -1,5 +1,11 @@
 # soonloh
 
+## 0.6.0
+
+### Minor Changes
+
+- d022618: Add a Metro integration (`soonloh/metro`). `withSoonloh(metroConfig, options)` wraps a Metro config to run codegen before the first bundle and watch the router root in dev. Also fixes inline `config` objects being silently ignored (router root was never resolved).
+
 ## 0.5.2
 
 ### Patch Changes
