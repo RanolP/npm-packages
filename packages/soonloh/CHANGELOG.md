@@ -1,5 +1,11 @@
 # soonloh
 
+## 0.6.2
+
+### Patch Changes
+
+- d5caba1: Add a `default` condition to every `exports` subpath so `require('soonloh/metro')` resolves from CJS metro configs instead of throwing ERR_PACKAGE_PATH_NOT_EXPORTED
+
 ## 0.6.1
 
 ### Patch Changes
