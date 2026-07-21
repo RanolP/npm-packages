@@ -1,5 +1,11 @@
 # soonloh
 
+## 0.6.1
+
+### Patch Changes
+
+- 07c3da6: Diagnose missing config file, malformed config, and missing router root with readable errors instead of crashing the dev server
+
 ## 0.6.0
 
 ### Minor Changes
