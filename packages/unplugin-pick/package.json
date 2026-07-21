@@ -1,6 +1,6 @@
 {
   "name": "unplugin-pick",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Selective imports via `?pick`/`?drop` queries for server/client bundle splitting",
   "type": "module",
   "repository": {
