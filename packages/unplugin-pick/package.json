@@ -1,0 +1,52 @@
+{
+  "name": "unplugin-pick",
+  "version": "0.0.0",
+  "description": "Selective imports via `?pick`/`?drop` queries for server/client bundle splitting",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RanolP/npm-packages",
+    "directory": "packages/unplugin-pick"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run"
+  },
+  "author": "RanolP <me@ranolp.dev>",
+  "license": "MIT",
+  "keywords": [
+    "unplugin",
+    "vite",
+    "rollup",
+    "tree-shaking",
+    "code-splitting",
+    "server-components"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.0.1",
+    "tsdown": "^0.12.7",
+    "typescript": "catalog:",
+    "vitest": "^3.2.3"
+  },
+  "files": [
+    "src/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
+    }
+  },
+  "dependencies": {
+    "magic-string": "^0.30.21",
+    "oxc-parser": "^0.140.0",
+    "unplugin": "^2.3.11"
+  }
+}
