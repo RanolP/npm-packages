@@ -29,27 +29,33 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./builtin-parsers": {
       "types": "./dist/builtin-parsers/index.d.ts",
-      "import": "./dist/builtin-parsers/index.js"
+      "import": "./dist/builtin-parsers/index.js",
+      "default": "./dist/builtin-parsers/index.js"
     },
     "./builtin-generators": {
       "types": "./dist/builtin-generators/index.d.ts",
-      "import": "./dist/builtin-generators/index.js"
+      "import": "./dist/builtin-generators/index.js",
+      "default": "./dist/builtin-generators/index.js"
     },
     "./vite": {
       "types": "./dist/vite.d.ts",
-      "import": "./dist/vite.js"
+      "import": "./dist/vite.js",
+      "default": "./dist/vite.js"
     },
     "./metro": {
       "types": "./dist/metro.d.ts",
-      "import": "./dist/metro.js"
+      "import": "./dist/metro.js",
+      "default": "./dist/metro.js"
     },
     "./rt": {
       "types": "./dist/rt.d.ts",
-      "import": "./dist/rt.js"
+      "import": "./dist/rt.js",
+      "default": "./dist/rt.js"
     }
   },
   "dependencies": {
