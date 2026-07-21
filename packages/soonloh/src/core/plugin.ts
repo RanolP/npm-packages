@@ -2,7 +2,7 @@ import path from 'node:path';
 import { stat, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { setTimeout } from 'node:timers/promises';
-import { Config } from './config.js';
+import { Config, validateConfig } from './config.js';
 import { AbortableTask, AbortedError, runAbortable } from 'p-abort';
 import { createSoonlohRuntime } from '../rt.js';
 
@@ -52,40 +52,58 @@ export class SoonlohPlugin {
     if (typeof file !== 'string') {
       // Inline config: nothing to import, just resolve the router root from it.
       if (this.#config) {
-        const config = await this.#config;
-        this.routerRoot = path.join(this.#root, config.routerRoot);
-        this.hasConfigResolved = true;
+        try {
+          const config = validateConfig(await this.#config, 'inline config');
+          this.routerRoot = path.join(this.#root, config.routerRoot);
+          this.hasConfigResolved = true;
+        } catch (e) {
+          this.#config = null;
+          logError(e);
+        }
       }
       return;
     }
-    const href = pathToFileURL(file).href;
-    const mtime = (await stat(file)).mtime;
+    let mtime: Date;
+    try {
+      mtime = (await stat(file)).mtime;
+    } catch {
+      console.error(
+        `[soonloh] config file not found: ${file}\n` +
+          '          create it (or pass an inline config); codegen is paused until then',
+      );
+      return;
+    }
     if (isFileTs(file)) {
       if (!isDeno() && !isBun() && !isNodeSupportNativeTypeScript()) {
-        throw new Error('[soonloh] We cannot handle TypeScript file');
+        console.error(
+          '[soonloh] this runtime cannot import a TypeScript config file; use Node with native TS support (>= 22.6), Deno, or Bun',
+        );
+        return;
       }
     }
-    const promise = import(`${href}?t=${mtime}`).then(
-      (module) => module.default as Config,
+    const href = pathToFileURL(file).href;
+    const promise = import(`${href}?t=${mtime}`).then((module) =>
+      validateConfig(module.default, file),
     );
-    promise.then((config) => {
+    // Publish the in-flight promise on first load so an early generate() can
+    // await it instead of skipping the initial codegen.
+    const isFirstLoad = this.#config == null;
+    if (isFirstLoad) {
+      this.#config = promise;
+    }
+    try {
+      const config = await promise;
+      this.#config = Promise.resolve(config);
       this.hasConfigResolved = true;
       this.routerRoot = path.join(this.#root, config.routerRoot);
-      console.log('[soonloh] config loaded: ', this.routerRoot, {
-        cfg: config.routerRoot,
-      });
-    });
-    if (this.#config == null) {
-      this.#config = promise;
-    } else {
-      try {
-        this.#config = Promise.resolve(await promise);
-      } catch (e) {
-        console.error(
-          '[soonloh] failed to reload config, keep previous one...',
-        );
-        console.error(e);
+      console.log(`[soonloh] config loaded: ${file}`);
+    } catch (e) {
+      if (isFirstLoad) {
+        this.#config = null;
+      } else {
+        console.error('[soonloh] failed to reload config, keep previous one...');
       }
+      logError(e);
     }
   }
   // endregion
@@ -104,12 +122,27 @@ export class SoonlohPlugin {
       if (!this.hasConfigResolved) {
         console.log('[soonloh] waiting for the config to be loaded...');
       }
-      const routerRoot = this.routerRoot;
-      const config = await $(this.#config);
-      if (!routerRoot || !config) return;
+      // The in-flight promise may reject on a broken first load; the failure
+      // is already diagnosed in loadConfig, so just skip codegen here.
+      const config = await $(this.#config).catch(() => null);
+      if (!config) return;
 
       const rt = createSoonlohRuntime(config);
-      const routes = await rt.routes();
+      let routes;
+      try {
+        routes = await $(rt.routes());
+      } catch (e) {
+        if (e instanceof AbortedError) return;
+        if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') {
+          console.error(
+            `[soonloh] router root not found: ${path.join(this.#root, config.routerRoot)}\n` +
+              '          create the directory or fix `routerRoot` in your config',
+          );
+        } else {
+          logError(e);
+        }
+        return;
+      }
       await $.all(
         config.generators.map(async (generator) => {
           try {
@@ -171,6 +204,9 @@ export class SoonlohPlugin {
   }
   // endregion
 }
+
+const logError = (e: unknown) =>
+  console.error(e instanceof Error ? `[soonloh] ${e.message}` : e);
 
 // ref: https://github.com/eslint/eslint/blob/60c3e2cf9256f3676b7934e26ff178aaf19c9e97/lib/config/config-loader.js#L85-L129
 const isFileTs = (file: string) => /^\.[mc]?ts$/.test(path.extname(file));
