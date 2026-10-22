@@ -1,0 +1,161 @@
+import { Context, Effect } from "effect"
+import { describe, expect, it } from "vitest"
+import { action, Actor, defer, state } from "../src/index.js"
+import { ActorCompensationFailed, ActorEffect, NoActiveTransactionError } from "../src/effect.js"
+import type { ActorRef } from "../src/types.js"
+
+interface PrefixService {
+  readonly value: string
+}
+
+const Prefix = Context.Service<PrefixService>("PrefixService")
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((done) => { resolve = done; })
+  return { promise, resolve }
+}
+
+describe("@mekakucity/actors/effect", () => {
+  it("runs actor effects inside the transaction's AsyncLocalStorage context", async () => {
+    class Counter extends Actor<Counter, { value: number }> {
+      @state accessor value = this.input.value
+      @action async add(amount: number) {
+        this.value += amount
+        return this.value
+      }
+    }
+
+    const program = Effect.gen(function*() {
+      const prefix = yield* Prefix
+      const ref = yield* ActorEffect.spawn(Counter, { value: 2 })
+      const value = yield* ActorEffect.call(ref, "add", 3)
+      yield* ActorEffect.refreshValues(ref)
+      return `${prefix.value}:${value}:${ref.value}`
+    })
+
+    const result = await Effect.runPromise(
+      ActorEffect.transaction(program).pipe(Effect.provideService(Prefix, { value: "count" })),
+    )
+    expect(result).toBe("count:5:5")
+  })
+
+  it("maps unknown action failures to a catchable tagged error with the original cause", async () => {
+    class FailingActor extends Actor<FailingActor, {}> {
+      @action async fail() { throw "user failure"; }
+    }
+
+    const cause = await Effect.runPromise(ActorEffect.transaction(
+      Effect.gen(function*() {
+        const ref = yield* ActorEffect.spawn(FailingActor, {})
+        return yield* ActorEffect.call(ref, "fail").pipe(
+          Effect.catchTag("UnknownActionError", (error) => Effect.succeed(error.cause)),
+        )
+      }),
+    ))
+    expect(cause).toBe("user failure")
+  })
+
+  it("maps compensation failures to a tagged error with compensation errors and the original cause", async () => {
+    const originalFailure = new Error("action failed")
+    const compensationFailure = new Error("undo failed")
+    class CompensatingActor extends Actor<CompensatingActor, {}> {
+      @action async run() {
+        defer(this.undo)
+        throw originalFailure
+      }
+      @action async undo() { throw compensationFailure }
+    }
+
+    const failure = await Effect.runPromise(ActorEffect.transaction(
+      Effect.gen(function*() {
+        const ref = yield* ActorEffect.spawn(CompensatingActor, {})
+        return yield* ActorEffect.call(ref, "run").pipe(
+          Effect.catchTag("ActorCompensationFailed", (error) => Effect.succeed(error)),
+        )
+      }),
+    ))
+
+    expect(failure).toBeInstanceOf(ActorCompensationFailed)
+    if (!(failure instanceof ActorCompensationFailed)) throw new Error("Expected ActorCompensationFailed")
+    expect(failure._tag).toBe("ActorCompensationFailed")
+    expect(failure.errors).toEqual([compensationFailure])
+    expect(failure.cause.cause).toBe(originalFailure)
+  })
+
+  it("preserves a typed Effect failure when a root compensation also fails", async () => {
+    const originalFailure = new Error("typed body failure")
+    const compensationFailure = new Error("root undo failed")
+    class RootCompensator extends Actor<RootCompensator, {}> {
+      @action async register() { defer(this.undo) }
+      @action async undo() { throw compensationFailure }
+    }
+
+    const failure = await Effect.runPromise(ActorEffect.transaction(
+      Effect.gen(function*() {
+        const ref = yield* ActorEffect.spawn(RootCompensator, {})
+        yield* ActorEffect.call(ref, "register")
+        return yield* Effect.fail(originalFailure)
+      }),
+    ).pipe(Effect.catchTag("ActorCompensationFailed", (error) => Effect.succeed(error))))
+
+    expect(failure).toBeInstanceOf(ActorCompensationFailed)
+    if (!(failure instanceof ActorCompensationFailed)) throw new Error("Expected ActorCompensationFailed")
+    expect(failure.errors).toEqual([compensationFailure])
+    expect(failure.cause.cause).toBe(originalFailure)
+  })
+
+  it("maps core reentrancy errors to their matching Effect tag", async () => {
+    interface BouncePeer {
+      bounce(): Promise<void>
+    }
+    class RingActor extends Actor<RingActor, { peer?: ActorRef<BouncePeer> }> {
+      @state accessor peer: ActorRef<BouncePeer> | null = this.input.peer ?? null
+      @action async bounce(): Promise<void> {
+        if (this.peer) await this.peer.bounce()
+      }
+      @action async setPeer(peer: ActorRef<BouncePeer>) { this.peer = peer; }
+    }
+
+    const caught = await Effect.runPromise(ActorEffect.transaction(
+      Effect.gen(function*() {
+        const first = yield* ActorEffect.spawn(RingActor, {})
+        const second = yield* ActorEffect.spawn(RingActor, { peer: first })
+        const linked = yield* ActorEffect.spawn(RingActor, { peer: second })
+        yield* ActorEffect.call(first, "setPeer", linked)
+        return yield* ActorEffect.call(linked, "bounce").pipe(
+          Effect.catchTag("ActorReentrancyError", () => Effect.succeed("caught")),
+        )
+      }),
+    ))
+    expect(caught).toBe("caught")
+  })
+
+  it("provides named lookup and detached delivery as effects", async () => {
+    const delivered = deferred()
+    class SignalActor extends Actor<SignalActor, {}> {
+      @action async signal() { delivered.resolve(); }
+    }
+
+    const ref = await Effect.runPromise(ActorEffect.transaction(
+      Effect.gen(function*() {
+        const maybe = yield* ActorEffect.named(SignalActor, "effect-signal").orNull()
+        expect(maybe).toBeNull()
+        const named = yield* ActorEffect.named(SignalActor, "effect-signal").orSpawn(() => ({}))
+        yield* ActorEffect.runDetached(named, "signal")
+        return named
+      }),
+    ))
+    await delivered.promise
+    expect(ref.type).toBe("SignalActor")
+  })
+
+  it("maps transaction precondition failures to a catchable tagged error", async () => {
+    const error = await Effect.runPromise(ActorEffect.spawn(class EmptyActor extends Actor<EmptyActor, {}> {}, {}).pipe(
+      Effect.catchTag("NoActiveTransactionError", (cause) => Effect.succeed(cause)),
+    ))
+    expect(error).toBeInstanceOf(NoActiveTransactionError)
+    if (!(error instanceof NoActiveTransactionError)) throw new Error("Expected a tagged transaction error")
+    expect(error._tag).toBe("NoActiveTransactionError")
+  })
+})
