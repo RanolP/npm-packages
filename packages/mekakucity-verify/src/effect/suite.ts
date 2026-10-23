@@ -1,9 +1,9 @@
 import { Cause, Context, Effect, Exit } from "effect"
 import { describe, expect } from "vitest"
-import { action, Actor, state } from "../../index.js"
-import { ActorEffect, NoActiveActorRuntimeError } from "../../effect/index.js"
-import type { ActorRef } from "../../ref/types.js"
-import type { ActorRuntime } from "../../runtime/actor-runtime.js"
+import { action, Actor, state } from "@mekakucity/actors"
+import { ActorEffect, NoActiveActorRuntimeError } from "@mekakucity/actors/effect"
+import type { ActorRef } from "@mekakucity/actors"
+import type { ActorRuntime } from "@mekakucity/actors/runtime"
 import { createRuntimeTestTools } from "../runtime.js"
 
 interface PrefixService {

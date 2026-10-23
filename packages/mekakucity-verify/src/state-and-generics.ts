@@ -1,6 +1,6 @@
-import { Actor, action, derived, state } from "../index.js";
-import type { Cloneable } from "../index.js";
-import type { ActorRuntime } from "../runtime/actor-runtime.js";
+import { Actor, action, derived, state } from "@mekakucity/actors";
+import type { Cloneable } from "@mekakucity/actors";
+import type { ActorRuntime } from "@mekakucity/actors/runtime";
 import { describe, expect } from "vitest";
 import { createRuntimeTestTools, type ActorRuntimeConformanceHooks } from "./runtime.js";
 

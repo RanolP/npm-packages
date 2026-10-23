@@ -1,6 +1,6 @@
-import { Actor, ActorReentrancyError, action, state } from "../index.js";
-import type { ActorRef } from "../index.js";
-import type { ActorRuntime } from "../runtime/actor-runtime.js";
+import { Actor, ActorReentrancyError, action, state } from "@mekakucity/actors";
+import type { ActorRef } from "@mekakucity/actors";
+import type { ActorRuntime } from "@mekakucity/actors/runtime";
 import { describe, expect } from "vitest";
 import { createRuntimeTestTools, type ActorRuntimeConformanceHooks } from "./runtime.js";
 

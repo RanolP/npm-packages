@@ -129,11 +129,11 @@ The `@mekakucity/actors/runtime` entry point also exports storage-independent bu
 
 These helpers operate only on supplied values, actor metadata, and callbacks. Runtime-owned storage, scheduling, reference registries, and delivery remain the runtime implementation's responsibility.
 
-Runtime authors can validate the core implementation with `@mekakucity/actors/conformance`. Effect-specific conformance is separate so the core suite does not load the optional `effect` peer:
+Runtime authors can validate the core implementation with `@mekakucity/verify`. Effect-specific conformance is separate so the core suite does not load the optional `effect` peer:
 
 ```ts
-import { actorRuntimeConformance } from "@mekakucity/actors/conformance";
-import { actorEffectConformance } from "@mekakucity/actors/conformance/effect";
+import { actorRuntimeConformance } from "@mekakucity/verify";
+import { actorEffectConformance } from "@mekakucity/verify/effect";
 import { MyActorRuntime } from "./my-actor-runtime.js";
 
 const runtimeFactory = () => new MyActorRuntime();
@@ -141,7 +141,7 @@ actorRuntimeConformance(runtimeFactory);
 actorEffectConformance(runtimeFactory);
 ```
 
-The conformance subpaths require the optional `vitest` peer dependency; the Effect suite also requires `effect`. Each test receives a fresh runtime from the factory and opens its own runtime scopes with `runtime.run(...)`. A runtime with a snapshot cache can optionally provide `evictSnapshotCache` to the core suite; runtimes without that capability need no hooks.
+The verification package requires `vitest`; its Effect suite also requires `effect`. Each test receives a fresh runtime from the factory and opens its own runtime scopes with `runtime.run(...)`. A runtime with a snapshot cache can optionally provide `evictSnapshotCache` to the core suite; runtimes without that capability need no hooks.
 
 ## Known limitations
 

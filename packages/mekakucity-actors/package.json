@@ -20,16 +20,6 @@
       "types": "./dist/runtime/index.d.ts",
       "import": "./dist/runtime/index.js",
       "default": "./dist/runtime/index.js"
-    },
-    "./conformance": {
-      "types": "./dist/conformance/index.d.ts",
-      "import": "./dist/conformance/index.js",
-      "default": "./dist/conformance/index.js"
-    },
-    "./conformance/effect": {
-      "types": "./dist/conformance/effect/index.d.ts",
-      "import": "./dist/conformance/effect/index.js",
-      "default": "./dist/conformance/effect/index.js"
     }
   },
   "repository": {
@@ -44,14 +34,10 @@
   "author": "RanolP <me@ranolp.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "effect": "^4.0.0",
-    "vitest": "^3.2.3"
+    "effect": "^4.0.0"
   },
   "peerDependenciesMeta": {
     "effect": {
-      "optional": true
-    },
-    "vitest": {
       "optional": true
     }
   },

@@ -1,6 +1,6 @@
 import { expect } from "vitest";
-import { Actor, NoActiveActorRuntimeError, action, state } from "../index.js";
-import type { ActorRuntime } from "../runtime/actor-runtime.js";
+import { Actor, NoActiveActorRuntimeError, action, state } from "@mekakucity/actors";
+import type { ActorRuntime } from "@mekakucity/actors/runtime";
 import { createRuntimeTestTools, type ActorRuntimeConformanceHooks } from "./runtime.js";
 
 class ScopedCounter extends Actor<{ value: number }, { value: number }> {
