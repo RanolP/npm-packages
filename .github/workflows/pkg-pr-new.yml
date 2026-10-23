@@ -27,7 +27,17 @@ jobs:
         run: pnpm changeset status --since ${{ steps.sekai.outputs.base_ref }} --output changeset.json
       - name: Publish Packages with Changesets
         run: |
-          cat changeset.json \
-          | jq -r '.releases | map(.name) | unique[]' \
-          | xargs -I {} pnpm --filter {} exec pnpm dlx pkg-pr-new publish --pnpm --packageManager=pnpm . \
-          ;
+          mapfile -t package_names < <(jq -r '.releases | map(.name) | unique[]' changeset.json)
+          if (( ${#package_names[@]} == 0 )); then
+            echo "No packages with changesets to publish."
+            exit 0
+          fi
+
+          package_dirs=()
+          for package_name in "${package_names[@]}"; do
+            package_dir=$(pnpm --filter "$package_name" exec pwd)
+            echo "$package_name -> $package_dir"
+            package_dirs+=("$package_dir")
+          done
+
+          pnpm dlx pkg-pr-new publish --pnpm --packageManager=pnpm "${package_dirs[@]}"
