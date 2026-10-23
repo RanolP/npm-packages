@@ -13,8 +13,8 @@ export const createRuntimeTestTools = (
   hooks?: ActorRuntimeConformanceHooks,
 ) => ({
   factory,
-  it: (name: string, test: () => unknown | Promise<unknown>): void => {
-    vitestIt(name, () => factory().run(test));
+  it: (name: string, test: (runtime: ActorRuntime) => unknown | Promise<unknown>): void => {
+    vitestIt(name, () => test(factory()));
   },
   itOutsideRuntime: (
     name: string,
@@ -22,12 +22,15 @@ export const createRuntimeTestTools = (
   ): void => vitestIt(name, test),
   itWithSnapshotCacheEviction: (
     name: string,
-    test: (evict: NonNullable<ActorRuntimeConformanceHooks["evictSnapshotCache"]>) => unknown | Promise<unknown>,
+    test: (
+      runtime: ActorRuntime,
+      evict: NonNullable<ActorRuntimeConformanceHooks["evictSnapshotCache"]>,
+    ) => unknown | Promise<unknown>,
   ): void => {
     vitestIt(name, (context: TestContext) => {
       const evict = hooks?.evictSnapshotCache;
       if (!evict) return context.skip();
-      return factory().run(() => test(evict));
+      return test(factory(), evict);
     });
   },
 });

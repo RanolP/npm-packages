@@ -28,13 +28,13 @@ class Counter extends Actor<Counter, { initial: number }> {
 
 const runtime = new InMemoryActorRuntime();
 
-const value = await runtime.run(() => Actor.transaction(async () => {
+const value = await runtime.run(async () => {
   const counter = await Actor.spawn(Counter, { initial: 0 });
   return counter.increment();
-}));
+});
 ```
 
-Each `InMemoryActorRuntime` owns its actors, named actor bindings, mailboxes, snapshots, outbox, and reference lifecycle. Create a fresh instance when a test needs isolated runtime state.
+Each `InMemoryActorRuntime` owns its actors, named actor bindings, mailboxes, snapshots, outbox, and reference lifecycle. Each `run` is one atomic unit; same-runtime nesting joins it, while another runtime remains isolated. Create a fresh instance when a test needs isolated runtime state.
 
 ## Development scope
 

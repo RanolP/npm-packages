@@ -7,7 +7,7 @@ import { createRuntimeTestTools, type ActorRuntimeConformanceHooks } from "./run
 export const stateAndGenericsSuite = (factory: () => ActorRuntime, hooks?: ActorRuntimeConformanceHooks): void => {
   const { it } = createRuntimeTestTools(factory, hooks);
   describe("@mekakucity/actors state, derived values, and generics", () => {
-  it("generic actor classes work when spawned with a pinned item type", async () => {
+  it("generic actor classes work when spawned with a pinned item type", async (runtime) => {
     class Queue<T extends Cloneable> extends Actor<Queue<T>, { items: T[] }> {
       @state accessor items: T[] = this.input.items;
       @action async push(item: T) { this.items = [...this.items, item]; }
@@ -18,7 +18,7 @@ export const stateAndGenericsSuite = (factory: () => ActorRuntime, hooks?: Actor
       }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const numbers = await Actor.spawn(Queue<number>, { items: [1, 2] });
       expect(numbers.items).toEqual([1, 2]);
       expect(await numbers.pop()).toBe(1);
@@ -38,13 +38,13 @@ export const stateAndGenericsSuite = (factory: () => ActorRuntime, hooks?: Actor
     });
   });
 
-  it("generic action methods keep their call-site type on refs", async () => {
+  it("generic action methods keep their call-site type on refs", async (runtime) => {
     class EchoActor extends Actor<EchoActor, {}> {
       @action async echo<T extends Cloneable>(value: T): Promise<T> { return value; }
       @action async selfy(this: EchoActor): Promise<number> { return 42; }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(EchoActor, {});
       expect(await ref.echo(5)).toBe(5);
       expect(await ref.echo("a")).toBe("a");

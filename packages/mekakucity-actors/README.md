@@ -18,7 +18,7 @@ pnpm add effect
 
 ## Run actor operations inside a runtime
 
-Create one runtime and establish its AsyncLocalStorage scope with `runtime.run(...)`. Actor operations also require an `Actor.transaction(...)`.
+Create one runtime and open an atomic unit with `runtime.run(...)`. The call establishes the AsyncLocalStorage scope, commits on success, and rolls back with compensations on failure.
 
 ```ts
 import { Actor, action, defer, state, type ActorRef } from "@mekakucity/actors";
@@ -41,22 +41,22 @@ class Counter extends Actor<Counter, { initial: number }> {
 
 const runtime = new InMemoryActorRuntime();
 
-await runtime.run(() => Actor.transaction(async () => {
+await runtime.run(async () => {
   const counter: ActorRef<Counter> = await Actor.spawn(Counter, { initial: 0 });
   await counter.add(2);
   console.log(counter.value); // 2
-}));
+});
 ```
 
 `Actor.spawn` returns an `ActorRef`, not the actor instance. The reference exposes decorated asynchronous actions and read-only state snapshots. `defer` registers a decorated action as compensation; if the surrounding transaction fails, compensations run in reverse registration order.
 
-Calling an actor API outside `runtime.run(...)` throws `NoActiveActorRuntimeError`. Calling an operation that needs a transaction outside `Actor.transaction(...)` throws `NoActiveTransactionError`.
+Calling an actor API outside `runtime.run(...)` throws `NoActiveActorRuntimeError`. A nested `run` on the same runtime joins the open transaction; a nested `run` on another runtime opens an isolated transaction owned by that runtime.
 
 ## Implement a runtime
 
 Import `ActorRuntime` from `@mekakucity/actors` or the runtime-author entry point `@mekakucity/actors/runtime`. The contract uses Node's `node:async_hooks` module to scope the active runtime. Implement these abstract members:
 
-- `transaction(work)` creates or joins the runtime's transaction context.
+- `run(work)` scopes the runtime and creates or joins its transaction context.
 - `spawn(Type, input)` creates an anonymous actor in the active transaction.
 - `named(Type, key)` looks up or creates a named actor.
 - `refreshValues(ref)` refreshes a reference's snapshot values.
@@ -91,7 +91,7 @@ actorRuntimeConformance(runtimeFactory);
 actorEffectConformance(runtimeFactory);
 ```
 
-The conformance subpaths require the optional `vitest` peer dependency; the Effect suite also requires `effect`. Each test receives a fresh runtime from the factory and runs inside that runtime's AsyncLocalStorage scope. A runtime with a snapshot cache can optionally provide `evictSnapshotCache` to the core suite; runtimes without that capability need no hooks.
+The conformance subpaths require the optional `vitest` peer dependency; the Effect suite also requires `effect`. Each test receives a fresh runtime from the factory and opens its own atomic units with `runtime.run(...)`. A runtime with a snapshot cache can optionally provide `evictSnapshotCache` to the core suite; runtimes without that capability need no hooks.
 
 ## Known limitations
 

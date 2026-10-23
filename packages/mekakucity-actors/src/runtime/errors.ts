@@ -13,6 +13,6 @@ export class NoActiveActorRuntimeError extends ActorRuntimeError {
 
 export class NoActiveTransactionError extends ActorRuntimeError {
   constructor(operation: string) {
-    super(`${operation} requires an active Actor.transaction()`);
+    super(`${operation} requires an active ActorRuntime.run()`);
   }
 }
