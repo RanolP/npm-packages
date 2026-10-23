@@ -32,8 +32,7 @@ export const enqueueDetached = (
     args: clonedArgs,
     heldIds: [...heldIds],
   };
-  if (context.compensation) context.compensation.outbox.push(message);
-  else if (context.frame) context.frame.outbox.push(message);
+  if (context.frame) context.frame.outbox.push(message);
   else context.root.outbox.push(message);
   context.root.pendingHolds.push(
     Promise.all([...heldIds].map((heldId) => hold(context.root, heldId, `message:${id}`)))
@@ -47,7 +46,7 @@ export const dispatchDetached = async (memory: RuntimeMemory, message: OutboxMes
     await invokeActorAction(memory, root, message.target.id, message.action, [...message.args], undefined, new Set());
     await finishRoot(memory, root, true);
   } catch (error) {
-    await finishRoot(memory, root, false, error);
+    await finishRoot(memory, root, false);
   } finally {
     for (const id of message.heldIds) await release(root, id, `message:${message.id}`);
   }

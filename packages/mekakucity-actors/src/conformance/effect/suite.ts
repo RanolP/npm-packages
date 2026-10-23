@@ -1,7 +1,7 @@
-import { Context, Effect } from "effect"
+import { Cause, Context, Effect, Exit } from "effect"
 import { describe, expect } from "vitest"
-import { action, Actor, defer, state } from "../../index.js"
-import { ActorCompensationFailed, ActorEffect, NoActiveActorRuntimeError } from "../../effect/index.js"
+import { action, Actor, state } from "../../index.js"
+import { ActorEffect, NoActiveActorRuntimeError } from "../../effect/index.js"
 import type { ActorRef } from "../../ref/types.js"
 import type { ActorRuntime } from "../../runtime/actor-runtime.js"
 import { createRuntimeTestTools } from "../runtime.js"
@@ -70,53 +70,13 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
     expect(cause).toBe("user failure")
   })
 
-  it("maps compensation failures to a tagged error with compensation errors and the original cause", async (runtime) => {
-    const originalFailure = new Error("action failed")
-    const compensationFailure = new Error("undo failed")
-    class CompensatingActor extends Actor<CompensatingActor, {}> {
-      @action async run() {
-        defer(this.undo)
-        throw originalFailure
-      }
-      @action async undo() { throw compensationFailure }
-    }
-
-    const failure = await Effect.runPromise(ActorEffect.run(runtime,
-      Effect.gen(function*() {
-        const ref = yield* ActorEffect.spawn(CompensatingActor, {})
-        return yield* ActorEffect.call(ref, "run").pipe(
-          Effect.catchTag("ActorCompensationFailed", (error) => Effect.succeed(error)),
-        )
-      }),
-    ))
-
-    expect(failure).toBeInstanceOf(ActorCompensationFailed)
-    if (!(failure instanceof ActorCompensationFailed)) throw new Error("Expected ActorCompensationFailed")
-    expect(failure._tag).toBe("ActorCompensationFailed")
-    expect(failure.errors).toEqual([compensationFailure])
-    expect(failure.cause.cause).toBe(originalFailure)
-  })
-
-  it("preserves a typed Effect failure when a root compensation also fails", async (runtime) => {
+  it("preserves a typed Effect failure from run", async (runtime) => {
     const originalFailure = new Error("typed body failure")
-    const compensationFailure = new Error("root undo failed")
-    class RootCompensator extends Actor<RootCompensator, {}> {
-      @action async register() { defer(this.undo) }
-      @action async undo() { throw compensationFailure }
-    }
-
-    const failure = await Effect.runPromise(ActorEffect.run(runtime,
-      Effect.gen(function*() {
-        const ref = yield* ActorEffect.spawn(RootCompensator, {})
-        yield* ActorEffect.call(ref, "register")
-        return yield* Effect.fail(originalFailure)
-      }),
-    ).pipe(Effect.catchTag("ActorCompensationFailed", (error) => Effect.succeed(error))))
-
-    expect(failure).toBeInstanceOf(ActorCompensationFailed)
-    if (!(failure instanceof ActorCompensationFailed)) throw new Error("Expected ActorCompensationFailed")
-    expect(failure.errors).toEqual([compensationFailure])
-    expect(failure.cause.cause).toBe(originalFailure)
+    const exit = await Effect.runPromiseExit(ActorEffect.run(runtime, Effect.fail(originalFailure)))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (!Exit.isFailure(exit)) throw new Error("Expected a typed failure")
+    const failure = exit.cause.reasons.find(Cause.isFailReason)
+    expect(failure?.error).toBe(originalFailure)
   })
 
   it("maps core reentrancy errors to their matching Effect tag", async (runtime) => {
@@ -167,20 +127,20 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
   it("joins a same-runtime run that is already active", async (runtime) => {
     class Counter extends Actor<Counter, {}> {
       @state accessor value = 0
-      @action async increment() { defer(this.decrement); this.value += 1 }
-      @action async decrement() { this.value -= 1 }
+      @action async increment() { this.value += 1 }
     }
     await runtime.run(() => Actor.ofNamed(Counter, "nested-effect-run").orSpawn(() => ({})))
+    const failure = new Error("fail outer run")
     await expect(runtime.run(async () => {
       const ref = await Actor.ofNamed(Counter, "nested-effect-run").orSpawn(() => ({}))
       await Effect.runPromise(ActorEffect.run(runtime, ActorEffect.call(ref, "increment")))
-      throw new Error("roll back outer run")
-    })).rejects.toThrow("roll back outer run")
-    const restoredValue = await runtime.run(async () => {
-      const restored = await Actor.ofNamed(Counter, "nested-effect-run").orSpawn(() => ({}))
-      return restored.value
+      throw failure
+    })).rejects.toBe(failure)
+    const committedValue = await runtime.run(async () => {
+      const counter = await Actor.ofNamed(Counter, "nested-effect-run").orSpawn(() => ({}))
+      return counter.value
     })
-    expect(restoredValue).toBe(0)
+    expect(committedValue).toBe(1)
   })
   })
 }

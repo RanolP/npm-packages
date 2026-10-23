@@ -1,5 +1,4 @@
 import { NoActiveTransactionError } from "@mekakucity/actors";
-import { runCompensations } from "../compensation/run.js";
 import { rollbackOutbox } from "../outbox/delivery.js";
 import { hold } from "../ref/lifecycle.js";
 import { collectRefs, hydrateRefs } from "../ref/surface.js";
@@ -7,7 +6,7 @@ import type { RuntimeMemory } from "../runtime/memory.js";
 import { rollbackAction } from "../state/commit.js";
 import { cloneActionResult } from "../state/snapshot.js";
 import { currentExecution, type ActionFrame } from "../transaction/context.js";
-import { makeFrame, mergeFrame } from "./frame.js";
+import { discardFrameSpawns, makeFrame, mergeFrame } from "./frame.js";
 
 export const invokeNested = async (
   memory: RuntimeMemory,
@@ -17,9 +16,8 @@ export const invokeNested = async (
   run: () => unknown,
 ): Promise<unknown> => {
   const frame = makeFrame(memory, parent.record, parent.root, parent, new Set(parent.chain));
-  const context = memory.execution.getStore();
   return memory.execution.run(
-    { root: frame.root, frame, chain: frame.chain, compensation: context?.compensation },
+    { root: frame.root, frame, chain: frame.chain },
     async () => {
       try {
         const value = cloneActionResult(memory, frame.record, actionName, await run());
@@ -30,11 +28,11 @@ export const invokeNested = async (
         mergeFrame(memory, frame);
         return hydrateRefs(memory, value);
       } catch (error) {
-        const compensationError = await runCompensations(memory, frame.root, frame.compensations, error);
         await rollbackAction(memory, frame);
+        await discardFrameSpawns(frame);
         await Promise.all(frame.root.pendingHolds);
         await rollbackOutbox(frame.root, frame.outbox);
-        throw compensationError ?? error;
+        throw error;
       }
     },
   );

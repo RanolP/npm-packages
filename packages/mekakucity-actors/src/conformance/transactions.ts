@@ -6,8 +6,84 @@ import { createRuntimeTestTools, type ActorRuntimeConformanceHooks } from "./run
 import { deferred, turn } from "./helpers.js";
 
 export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRuntimeConformanceHooks): void => {
-  const { it } = createRuntimeTestTools(factory, hooks);
+  const { it, itOutsideRuntime } = createRuntimeTestTools(factory, hooks);
   describe("@mekakucity/actors transactions", () => {
+  itOutsideRuntime("rethrows the original error from a run and from an action", async () => {
+    const runtime = factory();
+    const runFailure = new Error("run failure");
+    await expect(runtime.run(() => { throw runFailure; })).rejects.toBe(runFailure);
+
+    const actionFailure = new Error("action failure");
+    class FailingActor extends Actor<FailingActor, {}> {
+      @action async fail() { throw actionFailure; }
+    }
+    await runtime.run(() => Actor.ofNamed(FailingActor, "original-error").orSpawn(() => ({})));
+    await expect(runtime.run(async () => {
+      const ref = await Actor.ofNamed(FailingActor, "original-error").orSpawn(() => ({}));
+      await ref.fail();
+    })).rejects.toBe(actionFailure);
+  });
+
+  itOutsideRuntime("keeps a cross-actor segment committed before its run fails", async () => {
+    const runtime = factory();
+    class Peer extends Actor<Peer, {}> {
+      @action async ping() { return "pong"; }
+    }
+    class Counter extends Actor<Counter, { peer: ActorRef<Peer> }> {
+      @state accessor value = 0;
+      @state accessor peer = this.input.peer;
+      @action async commitAcrossActor() { this.value = 1; await this.peer.ping(); }
+    }
+
+    await runtime.run(async () => {
+      const peer = await Actor.ofNamed(Peer, "commit-peer").orSpawn(() => ({}));
+      await Actor.ofNamed(Counter, "committed-counter").orSpawn(() => ({ peer }));
+    });
+    const failure = new Error("fail after commit");
+    await expect(runtime.run(async () => {
+      const ref = await Actor.ofNamed(Counter, "committed-counter").orSpawn(async () => ({
+        peer: await Actor.ofNamed(Peer, "commit-peer").orSpawn(() => ({})),
+      }));
+      await ref.commitAcrossActor();
+      throw failure;
+    })).rejects.toBe(failure);
+    await runtime.run(async () => {
+      const ref = await Actor.ofNamed(Counter, "committed-counter").orNull();
+      expect(ref?.value).toBe(1);
+    });
+  });
+
+  itOutsideRuntime("does not overwrite a concurrent commit when another run fails", async () => {
+    const runtime = factory();
+    class NamedCounter extends Actor<NamedCounter, {}> {
+      @state accessor value = 0;
+      @action async set(value: number) { this.value = value; }
+    }
+    await runtime.run(() => Actor.ofNamed(NamedCounter, "concurrent-counter").orSpawn(() => ({})));
+
+    const firstCommitted = deferred();
+    const releaseFirst = deferred();
+    const failure = new Error("first run fails late");
+    const first = runtime.run(async () => {
+      const ref = await Actor.ofNamed(NamedCounter, "concurrent-counter").orSpawn(() => ({}));
+      await ref.set(1);
+      firstCommitted.resolve();
+      await releaseFirst.promise;
+      throw failure;
+    });
+    await firstCommitted.promise;
+    await runtime.run(async () => {
+      const ref = await Actor.ofNamed(NamedCounter, "concurrent-counter").orSpawn(() => ({}));
+      await ref.set(2);
+    });
+    releaseFirst.resolve();
+    await expect(first).rejects.toBe(failure);
+    await runtime.run(async () => {
+      const ref = await Actor.ofNamed(NamedCounter, "concurrent-counter").orNull();
+      expect(ref?.value).toBe(2);
+    });
+  });
+
   it("rejects non-structured-cloneable state at commit and rolls back", async (runtime) => {
     class SerializableActor extends Actor<SerializableActor, {}> {
       @state accessor value: unknown = "safe";

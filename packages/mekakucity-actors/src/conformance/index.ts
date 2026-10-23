@@ -1,4 +1,3 @@
-import { compensationSuite } from "./compensation.js";
 import { reentrancySuite } from "./reentrancy.js";
 import { refLifecycleSuite } from "./ref-lifecycle.js";
 import { runtimeScopeSuite } from "./runtime-scope.js";
@@ -12,7 +11,6 @@ export const actorRuntimeConformance = (
   hooks?: ActorRuntimeConformanceHooks,
 ): void => {
   transactionSuite(factory, hooks);
-  compensationSuite(factory, hooks);
   reentrancySuite(factory, hooks);
   refLifecycleSuite(factory, hooks);
   stateAndGenericsSuite(factory, hooks);

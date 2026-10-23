@@ -9,7 +9,6 @@ import {
 } from "@mekakucity/actors";
 import { invokeRefAction } from "./action/invoke.js";
 import { invokeLocal } from "./action/nested.js";
-import { registerDefer } from "./compensation/run.js";
 import { dispatchDetached, enqueueDetached } from "./outbox/runtime.js";
 import { namedActor, spawnActor } from "./ref/creation.js";
 import { refreshActorValues } from "./ref/surface.js";
@@ -58,10 +57,6 @@ export class InMemoryActorRuntime extends ActorRuntime {
 
   readSnapshotValue(ref: ActorDescriptor, key: string): unknown {
     return readSnapshotValue(this.#memory, ref, key);
-  }
-
-  defer(method: Function, args: unknown[]): void {
-    registerDefer(this.#memory, method, args);
   }
 
   [inMemoryActorRuntimeTestHooks](): InMemoryActorRuntimeTestHooks {

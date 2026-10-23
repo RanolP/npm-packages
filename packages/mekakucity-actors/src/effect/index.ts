@@ -1,7 +1,6 @@
 import { Cause, Data, Effect, Exit } from "effect"
 import {
   Actor,
-  ActorCompensationError as CoreActorCompensationError,
   ActorKilledError as CoreActorKilledError,
   NoActiveActorRuntimeError as CoreNoActiveActorRuntimeError,
   ActorReentrancyError as CoreActorReentrancyError,
@@ -40,12 +39,6 @@ export class ActorResultSerializationError extends Data.TaggedError("ActorResult
   readonly message: string
 }> {}
 
-export class ActorCompensationFailed extends Data.TaggedError("ActorCompensationFailed")<{
-  readonly cause: CoreActorCompensationError
-  readonly errors: readonly unknown[]
-  readonly message: string
-}> {}
-
 export class ActorReentrancyError extends Data.TaggedError("ActorReentrancyError")<{
   readonly cause: CoreActorReentrancyError
   readonly message: string
@@ -72,7 +65,6 @@ export type ActorError =
   | NoActiveTransactionError
   | ActorStateSerializationError
   | ActorResultSerializationError
-  | ActorCompensationFailed
   | ActorReentrancyError
   | ActorKilledError
   | ActorSnapshotUnavailableError
@@ -108,9 +100,6 @@ function describeCause(cause: unknown): string {
 function toActorEffectError(cause: unknown): ActorEffectError {
   if (cause instanceof CoreNoActiveActorRuntimeError) {
     return new NoActiveActorRuntimeError({ cause, message: cause.message })
-  }
-  if (cause instanceof CoreActorCompensationError) {
-    return new ActorCompensationFailed({ cause, errors: cause.errors, message: cause.message })
   }
   if (cause instanceof CoreActorResultSerializationError) {
     return new ActorResultSerializationError({ cause, message: cause.message })
@@ -200,14 +189,6 @@ function run<A, E, R>(runtime: ActorRuntime, program: Effect.Effect<A, E, R>): E
         throw new UnknownActionError({ cause: exit.cause, message: "Effect runtime body failed without a typed error" })
       }),
       catch: (cause) => {
-        if (cause instanceof CoreActorCompensationError && cause.cause instanceof EffectBodyFailure) {
-          const unwrapped = new CoreActorCompensationError(cause.errors, cause.cause.error)
-          return new ActorCompensationFailed({
-            cause: unwrapped,
-            errors: unwrapped.errors,
-            message: unwrapped.message,
-          })
-        }
         return cause instanceof EffectBodyFailure ? cause.error : toActorEffectError(cause)
       },
     })),

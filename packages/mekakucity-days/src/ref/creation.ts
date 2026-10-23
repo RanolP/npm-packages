@@ -6,7 +6,6 @@ import type {
   ActorRefInit,
 } from "@mekakucity/actors";
 import { createSnapshot } from "@mekakucity/actors/runtime";
-import type { Compensation } from "../compensation/model.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import { commitSegment, updateStateHolders } from "../state/commit.js";
 import { cacheSnapshot } from "../state/snapshot.js";
@@ -55,15 +54,11 @@ export const createActor = async <T extends Actor<unknown, unknown>>(
     startVersion: 0,
     initialState: first.state,
     baseline: first.state,
-    compensations: [],
+    spawnedIds: new Set(),
     outbox: [],
   };
-  if (!named) {
-    const parent = memory.execution.getStore()?.frame;
-    const compensation: Compensation = { actorId: id, action: "$runtime.kill", args: [] };
-    if (parent) parent.compensations.push(compensation);
-    else context.root.compensations.push(compensation);
-  }
+  const parent = memory.execution.getStore()?.frame;
+  if (!named && parent) parent.spawnedIds.add(id);
   await updateStateHolders(memory, initialFrame, first.state);
   return makeRef<T>(memory, type, id);
 };

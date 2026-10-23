@@ -1,5 +1,3 @@
-import type { ActorCompensationError } from "@mekakucity/actors";
-import { runCompensations } from "../compensation/run.js";
 import { flushOutbox, rollbackOutbox } from "../outbox/delivery.js";
 import { release } from "../ref/lifecycle.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
@@ -16,7 +14,6 @@ const releaseOwnedRefs = async (root: RootTransaction): Promise<void> => {
 export const newRoot = (memory: RuntimeMemory): RootTransaction => ({
   id: `transaction_${++memory.sequence.transaction}`,
   backend: memory.backend,
-  compensations: [],
   outbox: [],
   pendingHolds: [],
   ownedIds: new Set(),
@@ -26,19 +23,16 @@ export const finishRoot = async (
   memory: RuntimeMemory,
   root: RootTransaction,
   succeeded: boolean,
-  cause?: unknown,
-): Promise<ActorCompensationError | undefined> => {
+): Promise<void> => {
   if (succeeded) {
     await flushOutbox(root);
     await releaseOwnedRefs(root);
-    return undefined;
+    return;
   }
 
   await Promise.all(root.pendingHolds);
   await rollbackOutbox(root, root.outbox.splice(0));
-  const compensationError = await runCompensations(memory, root, root.compensations, cause);
   await releaseOwnedRefs(root);
-  return compensationError;
 };
 
 export const runTransaction = async <Result>(
@@ -53,7 +47,7 @@ export const runTransaction = async <Result>(
     await finishRoot(memory, root, true);
     return await result;
   } catch (error) {
-    const compensationError = await finishRoot(memory, root, false, error);
-    throw compensationError ?? error;
+    await finishRoot(memory, root, false);
+    throw error;
   }
 };
