@@ -8,7 +8,7 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**/*.ts", "src/**/*.test.ts", "vitest.config.ts"]
+      "inputs": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "tsconfig.json", "package.json"]
     },
     "web-computer-modern#generate": {
       "dependsOn": [
