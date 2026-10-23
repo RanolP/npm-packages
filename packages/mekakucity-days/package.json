@@ -1,0 +1,54 @@
+{
+  "name": "@mekakucity/days",
+  "version": "0.0.0",
+  "description": "In-memory development runtime for @mekakucity/actors",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RanolP/npm-packages",
+    "directory": "packages/mekakucity-days"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run --passWithNoTests"
+  },
+  "author": "RanolP <me@ranolp.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mekakucity/actors": ">=0.0.0 <1"
+  },
+  "devDependencies": {
+    "@mekakucity/actors": "workspace:*",
+    "@mekakucity/verify": "workspace:*",
+    "@types/node": "^24.0.1",
+    "effect": "^4.0.5",
+    "tsdown": "^0.12.7",
+    "typescript": "catalog:",
+    "vitest": "^3.2.3"
+  },
+  "files": [
+    "src/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "actor",
+    "actor-model",
+    "development-runtime"
+  ]
+}

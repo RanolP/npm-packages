@@ -1,0 +1,60 @@
+{
+  "name": "@mekakucity/actors",
+  "version": "0.0.0",
+  "description": "Runtime-independent actor contract for TypeScript",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./effect": {
+      "types": "./dist/effect/index.d.ts",
+      "import": "./dist/effect/index.js",
+      "default": "./dist/effect/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js",
+      "default": "./dist/runtime/index.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RanolP/npm-packages",
+    "directory": "packages/mekakucity-actors"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "author": "RanolP <me@ranolp.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "effect": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "effect": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.1",
+    "effect": "^4.0.5",
+    "typescript": "catalog:",
+    "vitest": "^3.2.3"
+  },
+  "files": [
+    "src/",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "actor",
+    "actor-model"
+  ]
+}
