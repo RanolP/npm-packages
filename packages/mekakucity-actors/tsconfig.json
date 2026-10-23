@@ -9,7 +9,7 @@
     "declaration": true,
     "experimentalDecorators": false,
     "useDefineForClassFields": true,
-    "types": []
+    "types": ["node"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

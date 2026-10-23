@@ -1,6 +1,6 @@
 import { expectTypeOf, test } from "vitest";
 import { Actor, action } from "../src/index.js";
-import { ActorEffect } from "../src/effect.js";
+import { ActorEffect } from "../src/effect/index.js";
 import type { ActorRef } from "../src/index.js";
 
 class EffectFixture extends Actor<EffectFixture, {}> {

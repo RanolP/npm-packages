@@ -1,0 +1,31 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { Actor, ActorConstructor } from "@mekakucity/actors";
+import type { ActionReply } from "../action/reply.js";
+import { InMemoryStore } from "../ref/in-memory-store.js";
+import { SnapshotCache } from "../state/cache.js";
+import type { ExecutionContext } from "../transaction/context.js";
+
+export interface RuntimeMemory {
+  readonly backend: InMemoryStore;
+  readonly snapshotCache: SnapshotCache;
+  readonly knownTypes: Map<string, ActorConstructor<Actor<unknown, unknown>>>;
+  readonly namedCreations: Map<string, Promise<unknown>>;
+  readonly instanceIds: WeakMap<object, string>;
+  readonly refs: WeakSet<object>;
+  readonly typeIds: WeakMap<Function, string>;
+  readonly execution: AsyncLocalStorage<ExecutionContext>;
+  readonly sequence: { actor: number; transaction: number; message: number };
+  lastReplyForTest?: ActionReply;
+}
+
+export const createRuntimeMemory = (): RuntimeMemory => ({
+  backend: new InMemoryStore(),
+  snapshotCache: new SnapshotCache(),
+  knownTypes: new Map(),
+  namedCreations: new Map(),
+  instanceIds: new WeakMap(),
+  refs: new WeakSet(),
+  typeIds: new WeakMap(),
+  execution: new AsyncLocalStorage<ExecutionContext>(),
+  sequence: { actor: 0, transaction: 0, message: 0 },
+});

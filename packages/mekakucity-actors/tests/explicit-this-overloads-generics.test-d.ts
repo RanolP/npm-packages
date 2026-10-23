@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { assertType, expectTypeOf, test } from "vitest";
 import { Actor, action } from "../src/index.js";
-import { ActorEffect, type ActorEffectError } from "../src/effect.js";
+import { ActorEffect, type ActorEffectError } from "../src/effect/index.js";
 import type { ActorRef, Cloneable } from "../src/index.js";
 
 class ExplicitThisActor extends Actor<ExplicitThisActor, {}> {
