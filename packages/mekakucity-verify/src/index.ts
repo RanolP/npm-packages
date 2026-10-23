@@ -4,7 +4,7 @@ import { runtimeScopeSuite } from "./runtime-scope.js";
 import { stateAndGenericsSuite } from "./state-and-generics.js";
 import { transactionSuite } from "./transactions.js";
 import type { ActorRuntimeConformanceHooks } from "./runtime.js";
-import type { ActorRuntime } from "../runtime/actor-runtime.js";
+import type { ActorRuntime } from "@mekakucity/actors/runtime";
 
 export const actorRuntimeConformance = (
   factory: () => ActorRuntime,

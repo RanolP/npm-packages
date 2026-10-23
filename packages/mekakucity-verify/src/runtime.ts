@@ -1,6 +1,5 @@
-import type { Actor } from "../core/actor.js";
-import type { ActorRef } from "../ref/types.js";
-import { ActorRuntime } from "../runtime/actor-runtime.js";
+import type { Actor, ActorRef } from "@mekakucity/actors";
+import { ActorRuntime } from "@mekakucity/actors/runtime";
 import { it as vitestIt, type TestContext } from "vitest";
 
 export interface ActorRuntimeConformanceHooks {

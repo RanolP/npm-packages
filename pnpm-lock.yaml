@@ -65,6 +65,9 @@ importers:
       '@mekakucity/actors':
         specifier: workspace:*
         version: link:../mekakucity-actors
+      '@mekakucity/verify':
+        specifier: workspace:*
+        version: link:../mekakucity-verify
       '@types/node':
         specifier: ^24.0.1
         version: 24.0.1
@@ -74,6 +77,24 @@ importers:
       tsdown:
         specifier: ^0.12.7
         version: 0.12.7(typescript@5.8.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.8.3
+      vitest:
+        specifier: ^3.2.3
+        version: 3.2.3(@types/debug@4.1.12)(@types/node@24.0.1)(@vitest/ui@3.2.3)(jiti@2.6.1)
+
+  packages/mekakucity-verify:
+    devDependencies:
+      '@mekakucity/actors':
+        specifier: workspace:*
+        version: link:../mekakucity-actors
+      '@types/node':
+        specifier: ^24.0.1
+        version: 24.0.1
+      effect:
+        specifier: ^4.0.5
+        version: 4.0.5
       typescript:
         specifier: 'catalog:'
         version: 5.8.3

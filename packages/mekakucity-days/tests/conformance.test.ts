@@ -1,5 +1,5 @@
-import { actorRuntimeConformance } from "@mekakucity/actors/conformance";
-import { actorEffectConformance } from "@mekakucity/actors/conformance/effect";
+import { actorRuntimeConformance } from "@mekakucity/verify";
+import { actorEffectConformance } from "@mekakucity/verify/effect";
 import { ActorRuntime } from "@mekakucity/actors";
 import { InMemoryActorRuntime } from "../src/index.js";
 import { inMemoryActorRuntimeTestHooks } from "../src/testing.js";

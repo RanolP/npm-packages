@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "@mekakucity/actors": "workspace:*",
+    "@mekakucity/verify": "workspace:*",
     "@types/node": "^24.0.1",
     "effect": "^4.0.5",
     "tsdown": "^0.12.7",
