@@ -13,6 +13,7 @@ import {
 } from "../index.js"
 import type { ActorRef, ActorRefInit } from "../index.js"
 import type { ActorInput, ActorRefAction, Cloneable } from "../ref/types.js"
+import type { ActorRuntime } from "../runtime/actor-runtime.js"
 
 export class ActorRuntimeError extends Data.TaggedError("ActorRuntimeError")<{
   readonly cause: CoreActorRuntimeError
@@ -188,15 +189,15 @@ function runDetached<T, Key extends ActionKey<T>>(
   })
 }
 
-function transaction<A, E, R>(program: Effect.Effect<A, E, R>): Effect.Effect<A, E | ActorEffectError, R> {
+function run<A, E, R>(runtime: ActorRuntime, program: Effect.Effect<A, E, R>): Effect.Effect<A, E | ActorEffectError, R> {
   return Effect.context<R>().pipe(
     Effect.flatMap((context) => Effect.tryPromise({
-      try: () => Actor.transaction(async () => {
+      try: () => runtime.run(async () => {
         const exit = await Effect.runPromiseExitWith(context)(program)
         if (Exit.isSuccess(exit)) return exit.value
         const failure = exit.cause.reasons.find(Cause.isFailReason)
         if (failure) throw new EffectBodyFailure(failure.error)
-        throw new UnknownActionError({ cause: exit.cause, message: "Effect transaction body failed without a typed error" })
+        throw new UnknownActionError({ cause: exit.cause, message: "Effect runtime body failed without a typed error" })
       }),
       catch: (cause) => {
         if (cause instanceof CoreActorCompensationError && cause.cause instanceof EffectBodyFailure) {
@@ -219,7 +220,7 @@ export const ActorEffect = {
   named,
   refreshValues,
   runDetached,
-  transaction,
+  run,
 } as const
 
 export type { ActorRef, ActorRefInit }

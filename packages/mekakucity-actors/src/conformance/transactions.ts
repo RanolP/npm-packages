@@ -1,4 +1,4 @@
-import { Actor, ActorStateSerializationError, NoActiveTransactionError, action, state } from "../index.js";
+import { Actor, ActorStateSerializationError, NoActiveActorRuntimeError, action, state } from "../index.js";
 import type { ActorRef } from "../index.js";
 import type { ActorRuntime } from "../runtime/actor-runtime.js";
 import { describe, expect } from "vitest";
@@ -8,20 +8,20 @@ import { deferred, turn } from "./helpers.js";
 export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRuntimeConformanceHooks): void => {
   const { it } = createRuntimeTestTools(factory, hooks);
   describe("@mekakucity/actors transactions", () => {
-  it("rejects non-structured-cloneable state at commit and rolls back", async () => {
+  it("rejects non-structured-cloneable state at commit and rolls back", async (runtime) => {
     class SerializableActor extends Actor<SerializableActor, {}> {
       @state accessor value: unknown = "safe";
       @action async breakState() { this.value = () => "not cloneable"; }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(SerializableActor, {});
       await expect(ref.breakState()).rejects.toBeInstanceOf(ActorStateSerializationError);
       expect(ref.value).toBe("safe");
     });
   });
 
-  it("serializes each actor mailbox and keeps request order", async () => {
+  it("serializes each actor mailbox and keeps request order", async (runtime) => {
     const releaseFirst = deferred();
     const firstStarted = deferred();
     const events: string[] = [];
@@ -36,7 +36,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
       }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(MailboxActor, {});
       const first = ref.work("first");
       await firstStarted.promise;
@@ -49,7 +49,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
     });
   });
 
-  it("rolls back an action and isolates caught same-actor sub-transaction failures", async () => {
+  it("rolls back an action and isolates caught same-actor sub-transaction failures", async (runtime) => {
     class NestedActor extends Actor<NestedActor, {}> {
       @state accessor count = 0;
       @action async childFailure() { this.count += 10; throw new Error("child"); }
@@ -61,7 +61,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
       @action async fail() { this.count = 99; throw new Error("parent"); }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(NestedActor, {});
       await ref.parent();
       expect(ref.count).toBe(2);
@@ -70,7 +70,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
     });
   });
 
-  it("commits before a cross-actor await and holds the caller mailbox until the reply", async () => {
+  it("commits before a cross-actor await and holds the caller mailbox until the reply", async (runtime) => {
     const entered = deferred();
     const release = deferred();
     class GateActor extends Actor<GateActor, {}> {
@@ -84,7 +84,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
       @action async spawnChild() { this.value = 4; await Actor.spawn(GateActor, {}); }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const gate = await Actor.spawn(GateActor, {});
       const ref = await Actor.spawn(WaitingActor, { gate });
       const first = ref.waitAcrossActor();
@@ -101,7 +101,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
     });
   });
 
-  it("re-persists the action start snapshot after a nested cross-actor commit then failure", async () => {
+  it("re-persists the action start snapshot after a nested cross-actor commit then failure", async (runtime) => {
     class CommitPointActor extends Actor<CommitPointActor, {}> {
       @action async ping() { return "pong"; }
     }
@@ -112,7 +112,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
       @action async run() { await this.inner(); throw new Error("abort after commit point"); }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const peer = await Actor.spawn(CommitPointActor, {});
       const ref = await Actor.spawn(RollbackAfterCommitActor, { peer });
       await expect(ref.run()).rejects.toThrow("abort after commit point");
@@ -121,14 +121,14 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
     });
   });
 
-  it("named actors reuse one rooted instance and actor operations require a transaction", async () => {
+  it("named actors reuse one rooted instance and actor operations require a runtime run", async (runtime) => {
     class NamedCounter extends Actor<NamedCounter, { count: number }> {
       @state accessor count = this.input.count;
     }
-    expect(() => Actor.ofNamed(NamedCounter, "singleton")).toThrow(NoActiveTransactionError);
-    await expect(Actor.spawn(NamedCounter, { count: 0 })).rejects.toBeInstanceOf(NoActiveTransactionError);
+    expect(() => Actor.ofNamed(NamedCounter, "singleton")).toThrow(NoActiveActorRuntimeError);
+    expect(() => Actor.spawn(NamedCounter, { count: 0 })).toThrow(NoActiveActorRuntimeError);
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const named = Actor.ofNamed(NamedCounter, "singleton");
       expect(await named.orNull()).toBeNull();
       const [first, second] = await Promise.all([
@@ -139,7 +139,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
       expect(first.count).toBe(1);
     });
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const existing = await Actor.ofNamed(NamedCounter, "singleton").orSpawn(() => ({ count: 3 }));
       expect(existing.count).toBe(1);
     });

@@ -13,7 +13,7 @@ export interface ActorDescriptor {
 const activeRuntime = new AsyncLocalStorage<ActorRuntime>();
 
 export abstract class ActorRuntime {
-  run<Result>(work: () => Result): Result {
+  protected withActiveRuntime<Result>(work: () => Result): Result {
     return activeRuntime.run(this, work);
   }
 
@@ -23,7 +23,7 @@ export abstract class ActorRuntime {
     return runtime;
   }
 
-  abstract transaction<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>>;
+  abstract run<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>>;
   abstract spawn<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, input: ActorInput<T>): Promise<ActorRef<T>>;
   abstract named<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T>;
   abstract refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>>;

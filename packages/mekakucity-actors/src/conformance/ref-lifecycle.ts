@@ -8,7 +8,7 @@ import { deferred, turn } from "./helpers.js";
 export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRuntimeConformanceHooks): void => {
   const { it, itWithSnapshotCacheEviction } = createRuntimeTestTools(factory, hooks);
   describe("@mekakucity/actors ref lifecycle", () => {
-  it("keeps a ref dropped at a commit point alive when the action rolls back", async () => {
+  it("keeps a ref dropped at a commit point alive when the action rolls back", async (runtime) => {
     class Boundary extends Actor<Boundary, {}> {
       @action async ping() { return "boundary"; }
     }
@@ -26,7 +26,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async pingChild() { return this.child!.ping(); }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const boundary = await Actor.spawn(Boundary, {});
       const child = await Actor.spawn(Child, {});
       const holder = await Actor.spawn(RefHolder, { boundary, child });
@@ -37,7 +37,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     });
   });
 
-  it("commits detached messages to the outbox and drops them on rollback", async () => {
+  it("commits detached messages to the outbox and drops them on rollback", async (runtime) => {
     const processed = deferred();
     class Receiver extends Actor<Receiver, {}> {
       @state accessor count = 0;
@@ -51,20 +51,20 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
 
     let receiver!: ActorRef<Receiver>;
     let sender!: ActorRef<Sender>;
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       receiver = await Actor.spawn(Receiver, {});
       sender = await Actor.ofNamed(Sender, "detached-outbox-sender").orSpawn(() => ({ receiver }));
       await expect(sender.sendThenFail()).rejects.toThrow("rollback");
     });
     await turn();
-    await Actor.transaction(async () => { expect(receiver.count).toBe(0); });
+    await runtime.run(async () => { expect(receiver.count).toBe(0); });
 
-    await Actor.transaction(() => sender.send());
+    await runtime.run(() => sender.send());
     await processed.promise;
-    await Actor.transaction(async () => { expect(receiver.count).toBe(1); });
+    await runtime.run(async () => { expect(receiver.count).toBe(1); });
   });
 
-  it("kills an actor spawned by an action that later fails", async () => {
+  it("kills an actor spawned by an action that later fails", async (runtime) => {
     let child!: ActorRef<SpawnedChild>;
     class SpawnedChild extends Actor<SpawnedChild, {}> {
       @action async ping() { return "alive"; }
@@ -73,14 +73,14 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async spawnThenFail() { child = await Actor.spawn(SpawnedChild, {}); throw new Error("abort"); }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const spawner = await Actor.spawn(Spawner, {});
       await expect(spawner.spawnThenFail()).rejects.toThrow("abort");
       await expect(child.ping()).rejects.toBeInstanceOf(ActorKilledError);
     });
   });
 
-  it("collects unheld anonymous actors and retains refs stored in actor state", async () => {
+  it("collects unheld anonymous actors and retains refs stored in actor state", async (runtime) => {
     let child!: ActorRef<LifeActor>;
     class LifeActor extends Actor<LifeActor, {}> {
       @action async ping() { return "alive"; }
@@ -92,14 +92,14 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     }
 
     let holder!: ActorRef<Holder>;
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       child = await Actor.spawn(LifeActor, {});
       holder = await Actor.ofNamed(Holder, "lifetime-holder").orSpawn(() => ({}));
       await holder.keep(child);
       expect(await child.ping()).toBe("alive");
     });
-    await Actor.transaction(() => holder.drop());
-    await expect(Actor.transaction(() => child.ping())).rejects.toBeInstanceOf(ActorKilledError);
+    await runtime.run(() => holder.drop());
+    await expect(runtime.run(() => child.ping())).rejects.toBeInstanceOf(ActorKilledError);
 
     const messageStarted = deferred();
     const releaseMessage = deferred();
@@ -117,34 +117,34 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async send(ref: ActorRef<LifeActor>) { this.recipient.holdReference.runDetached(ref); }
     }
     let inFlightChild!: ActorRef<LifeActor>;
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       inFlightChild = await Actor.spawn(LifeActor, {});
       const recipient = await Actor.spawn(MessageRecipient, {});
       const sender = await Actor.spawn(MessageSender, { recipient });
       await sender.send(inFlightChild);
     });
     await messageStarted.promise;
-    await Actor.transaction(async () => { expect(await inFlightChild.ping()).toBe("alive"); });
+    await runtime.run(async () => { expect(await inFlightChild.ping()).toBe("alive"); });
     releaseMessage.resolve();
     await messageFinished.promise;
     await turn();
-    await expect(Actor.transaction(() => inFlightChild.ping())).rejects.toBeInstanceOf(ActorKilledError);
+    await expect(runtime.run(() => inFlightChild.ping())).rejects.toBeInstanceOf(ActorKilledError);
   });
 
-  it("kills an anonymous ref returned from the top-level transaction", async () => {
+  it("kills an anonymous ref returned from the top-level transaction", async (runtime) => {
     class ReturnedActor extends Actor<ReturnedActor, {}> {
       @state accessor value = "cached";
       @action async ping() { return "alive"; }
     }
 
-    const ref = await Actor.transaction(() => Actor.spawn(ReturnedActor, {}));
-    await Actor.transaction(async () => {
+    const ref = await runtime.run(() => Actor.spawn(ReturnedActor, {}));
+    await runtime.run(async () => {
       expect(ref.value).toBe("cached");
       await expect(ref.ping()).rejects.toBeInstanceOf(ActorKilledError);
     });
   });
 
-  itWithSnapshotCacheEviction("serializes refs as type/id data and refreshes a restored ref snapshot", async (evictSnapshotCache) => {
+  itWithSnapshotCacheEviction("serializes refs as type/id data and refreshes a restored ref snapshot", async (runtime, evictSnapshotCache) => {
     class SnapshotActor extends Actor<SnapshotActor, {}> {
       @state accessor value = 7;
     }
@@ -153,14 +153,14 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     }
 
     let holder!: ActorRef<SnapshotHolder>;
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(SnapshotActor, {});
       const wire = structuredClone(ref);
       expect(wire).toEqual({ type: "SnapshotActor", id: ref.id });
       expect(Object.keys(ref)).toEqual(["type", "id"]);
       holder = await Actor.ofNamed(SnapshotHolder, "snapshot-holder").orSpawn(() => ({ child: ref }));
     });
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const restored = holder.child;
       evictSnapshotCache(restored);
       expect(() => restored.value).toThrow(ActorSnapshotUnavailableError);
@@ -169,7 +169,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     });
   });
 
-  it("clone-checks action results and rehydrates returned actor refs", async () => {
+  it("clone-checks action results and rehydrates returned actor refs", async (runtime) => {
     const resultSymbol = Symbol("result");
     class ResultChild extends Actor<ResultChild, {}> {
       @action async ping() { return "alive"; }
@@ -202,7 +202,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async undo() { undoRuns += 1; }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(ResultActor, {});
       await expect(ref.badFunction()).rejects.toBeInstanceOf(ActorResultSerializationError);
       await Actor.refreshValues(ref);

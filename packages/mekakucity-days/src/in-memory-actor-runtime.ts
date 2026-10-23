@@ -24,12 +24,12 @@ export class InMemoryActorRuntime extends ActorRuntime {
   constructor() {
     super();
     this.#memory.backend.setDeliveryHandler(async (message) => {
-      void this.run(() => dispatchDetached(this.#memory, message));
+      void this.withActiveRuntime(() => dispatchDetached(this.#memory, message));
     });
   }
 
-  transaction<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>> {
-    return runTransaction(this.#memory, work);
+  run<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>> {
+    return this.withActiveRuntime(() => runTransaction(this.#memory, work));
   }
 
   spawn<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, input: ActorInput<T>): Promise<ActorRef<T>> {

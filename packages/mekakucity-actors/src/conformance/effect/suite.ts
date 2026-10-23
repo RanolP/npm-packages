@@ -1,7 +1,7 @@
 import { Context, Effect } from "effect"
 import { describe, expect } from "vitest"
 import { action, Actor, defer, state } from "../../index.js"
-import { ActorCompensationFailed, ActorEffect, NoActiveActorRuntimeError, NoActiveTransactionError } from "../../effect/index.js"
+import { ActorCompensationFailed, ActorEffect, NoActiveActorRuntimeError } from "../../effect/index.js"
 import type { ActorRef } from "../../ref/types.js"
 import type { ActorRuntime } from "../../runtime/actor-runtime.js"
 import { createRuntimeTestTools } from "../runtime.js"
@@ -22,7 +22,8 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
   const { it, itOutsideRuntime } = createRuntimeTestTools(factory)
   describe("@mekakucity/actors/effect", () => {
   itOutsideRuntime("maps a missing runtime to its matching Effect tag", async () => {
-    const error = await Effect.runPromise(ActorEffect.transaction(Effect.succeed(0)).pipe(
+    class EmptyActor extends Actor<EmptyActor, {}> {}
+    const error = await Effect.runPromise(ActorEffect.spawn(EmptyActor, {}).pipe(
       Effect.catchTag("NoActiveActorRuntimeError", (cause) => Effect.succeed(cause)),
     ))
     expect(error).toBeInstanceOf(NoActiveActorRuntimeError)
@@ -30,7 +31,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
     expect(error._tag).toBe("NoActiveActorRuntimeError")
   })
 
-  it("runs actor effects inside the transaction's AsyncLocalStorage context", async () => {
+  it("runs actor effects inside the transaction's AsyncLocalStorage context", async (runtime) => {
     class Counter extends Actor<Counter, { value: number }> {
       @state accessor value = this.input.value
       @action async add(amount: number) {
@@ -48,17 +49,17 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
     })
 
     const result = await Effect.runPromise(
-      ActorEffect.transaction(program).pipe(Effect.provideService(Prefix, { value: "count" })),
+      ActorEffect.run(runtime, program).pipe(Effect.provideService(Prefix, { value: "count" })),
     )
     expect(result).toBe("count:5:5")
   })
 
-  it("maps unknown action failures to a catchable tagged error with the original cause", async () => {
+  it("maps unknown action failures to a catchable tagged error with the original cause", async (runtime) => {
     class FailingActor extends Actor<FailingActor, {}> {
       @action async fail() { throw "user failure"; }
     }
 
-    const cause = await Effect.runPromise(ActorEffect.transaction(
+    const cause = await Effect.runPromise(ActorEffect.run(runtime,
       Effect.gen(function*() {
         const ref = yield* ActorEffect.spawn(FailingActor, {})
         return yield* ActorEffect.call(ref, "fail").pipe(
@@ -69,7 +70,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
     expect(cause).toBe("user failure")
   })
 
-  it("maps compensation failures to a tagged error with compensation errors and the original cause", async () => {
+  it("maps compensation failures to a tagged error with compensation errors and the original cause", async (runtime) => {
     const originalFailure = new Error("action failed")
     const compensationFailure = new Error("undo failed")
     class CompensatingActor extends Actor<CompensatingActor, {}> {
@@ -80,7 +81,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
       @action async undo() { throw compensationFailure }
     }
 
-    const failure = await Effect.runPromise(ActorEffect.transaction(
+    const failure = await Effect.runPromise(ActorEffect.run(runtime,
       Effect.gen(function*() {
         const ref = yield* ActorEffect.spawn(CompensatingActor, {})
         return yield* ActorEffect.call(ref, "run").pipe(
@@ -96,7 +97,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
     expect(failure.cause.cause).toBe(originalFailure)
   })
 
-  it("preserves a typed Effect failure when a root compensation also fails", async () => {
+  it("preserves a typed Effect failure when a root compensation also fails", async (runtime) => {
     const originalFailure = new Error("typed body failure")
     const compensationFailure = new Error("root undo failed")
     class RootCompensator extends Actor<RootCompensator, {}> {
@@ -104,7 +105,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
       @action async undo() { throw compensationFailure }
     }
 
-    const failure = await Effect.runPromise(ActorEffect.transaction(
+    const failure = await Effect.runPromise(ActorEffect.run(runtime,
       Effect.gen(function*() {
         const ref = yield* ActorEffect.spawn(RootCompensator, {})
         yield* ActorEffect.call(ref, "register")
@@ -118,7 +119,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
     expect(failure.cause.cause).toBe(originalFailure)
   })
 
-  it("maps core reentrancy errors to their matching Effect tag", async () => {
+  it("maps core reentrancy errors to their matching Effect tag", async (runtime) => {
     interface BouncePeer {
       bounce(): Promise<void>
     }
@@ -130,7 +131,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
       @action async setPeer(peer: ActorRef<BouncePeer>) { this.peer = peer; }
     }
 
-    const caught = await Effect.runPromise(ActorEffect.transaction(
+    const caught = await Effect.runPromise(ActorEffect.run(runtime,
       Effect.gen(function*() {
         const first = yield* ActorEffect.spawn(RingActor, {})
         const second = yield* ActorEffect.spawn(RingActor, { peer: first })
@@ -144,13 +145,13 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
     expect(caught).toBe("caught")
   })
 
-  it("provides named lookup and detached delivery as effects", async () => {
+  it("provides named lookup and detached delivery as effects", async (runtime) => {
     const delivered = deferred()
     class SignalActor extends Actor<SignalActor, {}> {
       @action async signal() { delivered.resolve(); }
     }
 
-    const ref = await Effect.runPromise(ActorEffect.transaction(
+    const ref = await Effect.runPromise(ActorEffect.run(runtime,
       Effect.gen(function*() {
         const maybe = yield* ActorEffect.named(SignalActor, "effect-signal").orNull()
         expect(maybe).toBeNull()
@@ -163,13 +164,23 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
     expect(ref.type).toBe("SignalActor")
   })
 
-  it("maps transaction precondition failures to a catchable tagged error", async () => {
-    const error = await Effect.runPromise(ActorEffect.spawn(class EmptyActor extends Actor<EmptyActor, {}> {}, {}).pipe(
-      Effect.catchTag("NoActiveTransactionError", (cause) => Effect.succeed(cause)),
-    ))
-    expect(error).toBeInstanceOf(NoActiveTransactionError)
-    if (!(error instanceof NoActiveTransactionError)) throw new Error("Expected a tagged transaction error")
-    expect(error._tag).toBe("NoActiveTransactionError")
+  it("joins a same-runtime run that is already active", async (runtime) => {
+    class Counter extends Actor<Counter, {}> {
+      @state accessor value = 0
+      @action async increment() { defer(this.decrement); this.value += 1 }
+      @action async decrement() { this.value -= 1 }
+    }
+    await runtime.run(() => Actor.ofNamed(Counter, "nested-effect-run").orSpawn(() => ({})))
+    await expect(runtime.run(async () => {
+      const ref = await Actor.ofNamed(Counter, "nested-effect-run").orSpawn(() => ({}))
+      await Effect.runPromise(ActorEffect.run(runtime, ActorEffect.call(ref, "increment")))
+      throw new Error("roll back outer run")
+    })).rejects.toThrow("roll back outer run")
+    const restoredValue = await runtime.run(async () => {
+      const restored = await Actor.ofNamed(Counter, "nested-effect-run").orSpawn(() => ({}))
+      return restored.value
+    })
+    expect(restoredValue).toBe(0)
   })
   })
 }

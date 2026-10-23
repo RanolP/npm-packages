@@ -34,7 +34,7 @@ describe("@mekakucity/days diff replies", () => {
     }
 
     const runtime = new InMemoryActorRuntime();
-    await runtime.run(() => Actor.transaction(async () => {
+    await runtime.run(async () => {
       const game = await Actor.spawn(NimGame, { players: [] });
       await game.enter("alice");
       await game.enter("bob");
@@ -63,6 +63,6 @@ describe("@mekakucity/days diff replies", () => {
       expect(game.winner).toBe("alice");
       expect(game.loser).toBe("bob");
       await expect(game.take("bob", 1)).rejects.toThrow("game over");
-    }));
+    });
   });
 });

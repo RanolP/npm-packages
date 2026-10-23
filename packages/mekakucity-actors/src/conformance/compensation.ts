@@ -8,7 +8,7 @@ import { completesBeforeTimeout, deferred, turn } from "./helpers.js";
 export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRuntimeConformanceHooks): void => {
   const { it } = createRuntimeTestTools(factory, hooks);
   describe("@mekakucity/actors compensation", () => {
-  it("runs the orchestrator's A and B compensations in reverse order when C fails", async () => {
+  it("runs the orchestrator's A and B compensations in reverse order when C fails", async (runtime) => {
     const undoOrder: string[] = [];
     class AActor extends Actor<AActor, {}> {
       @action async run() { defer(this.undo); }
@@ -28,7 +28,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async orchestrate() { await this.a.run(); await this.b.run(); await this.c.run(); }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const a = await Actor.spawn(AActor, {});
       const b = await Actor.spawn(BActor, {});
       const c = await Actor.spawn(CActor, {});
@@ -38,7 +38,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     });
   });
 
-  it("runs a direct self-targeting compensation without reacquiring the actor mailbox", async () => {
+  it("runs a direct self-targeting compensation without reacquiring the actor mailbox", async (runtime) => {
     const undoOrder: string[] = [];
     class SelfCompensatingActor extends Actor<SelfCompensatingActor, {}> {
       @state accessor undoCount = 0;
@@ -46,7 +46,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async undo() { this.undoCount += 1; undoOrder.push("self"); }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(SelfCompensatingActor, {});
       await expect(completesBeforeTimeout(ref.run())).rejects.toThrow("abort");
       expect(undoOrder).toEqual(["self"]);
@@ -55,7 +55,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     });
   });
 
-  it("runs a self-targeting compensation registered by a nested action without deadlocking", async () => {
+  it("runs a self-targeting compensation registered by a nested action without deadlocking", async (runtime) => {
     const undoOrder: string[] = [];
     class NestedSelfCompensatingActor extends Actor<NestedSelfCompensatingActor, {}> {
       @action async step() { defer(this.undo); }
@@ -63,14 +63,14 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async undo() { undoOrder.push("nested-self"); }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(NestedSelfCompensatingActor, {});
       await expect(completesBeforeTimeout(ref.run())).rejects.toThrow("abort");
       expect(undoOrder).toEqual(["nested-self"]);
     });
   });
 
-  it("preserves reverse order when one compensation targets its waiting actor", async () => {
+  it("preserves reverse order when one compensation targets its waiting actor", async (runtime) => {
     const undoOrder: string[] = [];
     class RemoteUndoActor extends Actor<RemoteUndoActor, {}> {
       @action async run() { defer(this.undo); }
@@ -86,7 +86,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async undo() { undoOrder.push("self"); }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const remote = await Actor.spawn(RemoteUndoActor, {});
       const ref = await Actor.spawn(MixedUndoActor, { remote });
       await expect(completesBeforeTimeout(ref.run())).rejects.toThrow("abort");
@@ -94,7 +94,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     });
   });
 
-  it("runs self-compensation before restoring the failed action's start state", async () => {
+  it("runs self-compensation before restoring the failed action's start state", async (runtime) => {
     class SelfUndoStateActor extends Actor<SelfUndoStateActor, {}> {
       @state accessor n = 0;
       @action async step() { this.n += 1; defer(this.dec); }
@@ -102,7 +102,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async dec() { this.n -= 1; }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(SelfUndoStateActor, {});
       await expect(ref.run()).rejects.toThrow("abort after step");
       await Actor.refreshValues(ref);
@@ -110,7 +110,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     });
   });
 
-  it("delivers detached messages from compensation and releases their receiver holder", async () => {
+  it("delivers detached messages from compensation and releases their receiver holder", async (runtime) => {
     const processed = deferred();
     let hits = 0;
     class Receiver extends Actor<Receiver, {}> {
@@ -125,7 +125,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
 
     let receiver!: ActorRef<Receiver>;
     let sender!: ActorRef<Sender>;
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       receiver = await Actor.spawn(Receiver, {});
       sender = await Actor.ofNamed(Sender, "compensation-outbox-sender").orSpawn(() => ({ receiver }));
       await expect(sender.run()).rejects.toThrow("rollback sender");
@@ -134,11 +134,11 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     await processed.promise;
     await turn();
     expect(hits).toBe(1);
-    await Actor.transaction(() => sender.drop());
-    await expect(Actor.transaction(() => receiver.hit())).rejects.toBeInstanceOf(ActorKilledError);
+    await runtime.run(() => sender.drop());
+    await expect(runtime.run(() => receiver.hit())).rejects.toBeInstanceOf(ActorKilledError);
   });
 
-  it("compensation mode does not leak into concurrent sibling branches", async () => {
+  it("compensation mode does not leak into concurrent sibling branches", async (runtime) => {
     const compensationStarted = deferred();
     const releaseCompensation = deferred();
     let hits = 0;
@@ -157,7 +157,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     }
 
     let slowOutcome!: Promise<unknown>;
-    await expect(Actor.transaction(async () => {
+    await expect(runtime.run(async () => {
       const slow = await Actor.ofNamed(Slow, "compensation-sibling-probe").orSpawn(() => ({}));
       const receiver = await Actor.spawn(Receiver, {});
       const sender = await Actor.spawn(Sender, { receiver });
@@ -173,7 +173,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     expect(await slowOutcome).toMatchObject({ message: "slow failed" });
   });
 
-  it("compensation calling back into the failing orchestrator fails fast instead of hanging", async () => {
+  it("compensation calling back into the failing orchestrator fails fast instead of hanging", async (runtime) => {
     let undoRuns = 0;
     let notifyRuns = 0;
     const originalFailure = new Error("original orchestration failure");
@@ -193,7 +193,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async notify() { notifyRuns += 1; }
     }
 
-    const failure = await completesBeforeTimeout(Actor.transaction(async () => {
+    const failure = await completesBeforeTimeout(runtime.run(async () => {
       const compensator = await Actor.spawn(Compensator, {});
       const orchestrator = await Actor.spawn(Orchestrator, { compensator });
       await orchestrator.orchestrate(orchestrator);
@@ -207,7 +207,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     expect(notifyRuns).toBe(0);
   });
 
-  it("collects root compensation failures in execution order and retains the original cause", async () => {
+  it("collects root compensation failures in execution order and retains the original cause", async (runtime) => {
     const calls: string[] = [];
     const originalFailure = new Error("transaction failure");
     class Compensator extends Actor<Compensator, {}> {
@@ -215,7 +215,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async undo(label: string) { calls.push(label); throw new Error(`undo ${label} failed`); }
     }
 
-    const failure = await Actor.transaction(async () => {
+    const failure = await runtime.run(async () => {
       const ref = await Actor.spawn(Compensator, {});
       await ref.run();
       throw originalFailure;
@@ -227,7 +227,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     expect(failure.errors.map((error) => (error as Error).message)).toEqual(["undo second failed", "undo first failed"]);
   });
 
-  it("flattens nested compensation failures while preserving the original action cause", async () => {
+  it("flattens nested compensation failures while preserving the original action cause", async (runtime) => {
     const originalFailure = new Error("nested action failed");
     const innerFailure = new Error("inner undo failed");
     const outerFailure = new Error("outer undo failed");
@@ -244,7 +244,7 @@ export const compensationSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       @action async undoOuter() { throw outerFailure; }
     }
 
-    await Actor.transaction(async () => {
+    await runtime.run(async () => {
       const ref = await Actor.spawn(NestedCompensationActor, {});
       const failure = await ref.run().then(() => undefined, (error: unknown) => error);
       expect(failure).toBeInstanceOf(ActorCompensationError);

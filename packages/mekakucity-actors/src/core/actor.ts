@@ -10,10 +10,6 @@ export abstract class Actor<Self, Input> {
     this.input = input;
   }
 
-  static transaction<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>> {
-    return ActorRuntime.current("Actor.transaction").transaction(work);
-  }
-
   static spawn<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, input: ActorInput<T>): Promise<ActorRef<T>>;
   static spawn<Type extends new (input: any) => Actor<any, any>>(
     Type: Type,
