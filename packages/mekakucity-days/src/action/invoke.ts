@@ -10,7 +10,6 @@ import {
   metadataFor,
   restoreSnapshotData,
 } from "@mekakucity/actors/runtime";
-import { runCompensations } from "../compensation/run.js";
 import { rollbackOutbox } from "../outbox/delivery.js";
 import { hold } from "../ref/lifecycle.js";
 import { collectRefs, hydrateRefs } from "../ref/surface.js";
@@ -23,7 +22,7 @@ import {
   snapshotVersion,
 } from "../state/snapshot.js";
 import { currentExecution, type ActionFrame, type RootTransaction } from "../transaction/context.js";
-import { makeFrame, mergeFrame } from "./frame.js";
+import { discardFrameSpawns, makeFrame, mergeFrame } from "./frame.js";
 import { invokeNested } from "./nested.js";
 import type { ActionReply } from "./reply.js";
 import { withMailbox } from "./mailbox.js";
@@ -72,8 +71,7 @@ export const invokeActorAction = async (
     const method = metadataFor(record.instance).actions.get(actionName);
     if (!method) throw new ActorRuntimeError(`Unknown actor action ${actionName}`);
     const frame = makeFrame(memory, record, root, parent, chain);
-    const context = memory.execution.getStore();
-    return memory.execution.run({ root, frame, chain, compensation: context?.compensation }, async () => {
+    return memory.execution.run({ root, frame, chain }, async () => {
       try {
         const callArgs = hydrateRefs(memory, structuredClone(args));
         const value = cloneActionResult(memory, record, actionName, await method.apply(record.instance, callArgs));
@@ -95,11 +93,11 @@ export const invokeActorAction = async (
           snapshot,
         };
       } catch (error) {
-        const compensationError = await runCompensations(memory, root, frame.compensations, error);
         await rollbackAction(memory, frame);
+        await discardFrameSpawns(frame);
         await Promise.all(root.pendingHolds);
         await rollbackOutbox(root, frame.outbox);
-        throw compensationError ?? error;
+        throw error;
       }
     });
   });

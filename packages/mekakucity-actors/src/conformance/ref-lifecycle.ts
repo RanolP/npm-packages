@@ -1,4 +1,4 @@
-import { Actor, ActorKilledError, ActorResultSerializationError, ActorSnapshotUnavailableError, defer, action, state } from "../index.js";
+import { Actor, ActorKilledError, ActorResultSerializationError, ActorSnapshotUnavailableError, action, state } from "../index.js";
 import type { ActorRef } from "../index.js";
 import type { ActorRuntime } from "../runtime/actor-runtime.js";
 import { describe, expect } from "vitest";
@@ -178,13 +178,11 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       value = 1;
       method() { return this.value; }
     }
-    let undoRuns = 0;
     let originalResult!: { nested: { value: number } };
     class ResultActor extends Actor<ResultActor, {}> {
       @state accessor value = 0;
       @action async badFunction() {
         this.value = 1;
-        defer(this.undo);
         return (() => 1) as unknown as undefined;
       }
       @action async badClass() { return new ClassWithMethod() as unknown as { value: number }; }
@@ -199,7 +197,6 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
         return originalResult;
       }
       @action async makeChild() { return await Actor.spawn(ResultChild, {}); }
-      @action async undo() { undoRuns += 1; }
     }
 
     await runtime.run(async () => {
@@ -207,7 +204,6 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       await expect(ref.badFunction()).rejects.toBeInstanceOf(ActorResultSerializationError);
       await Actor.refreshValues(ref);
       expect(ref.value).toBe(0);
-      expect(undoRuns).toBe(1);
       await expect(ref.badClass()).rejects.toBeInstanceOf(ActorResultSerializationError);
       await expect(ref.badSymbolKey()).rejects.toBeInstanceOf(ActorResultSerializationError);
       await expect(ref.badSymbolData()).rejects.toBeInstanceOf(ActorResultSerializationError);

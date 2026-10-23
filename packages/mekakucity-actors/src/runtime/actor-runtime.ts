@@ -31,5 +31,4 @@ export abstract class ActorRuntime {
   abstract invokeLocalAction(instance: object, actionName: string, args: unknown[], run: () => unknown): unknown;
   abstract runDetached(ref: ActorDescriptor, actionName: string, args: unknown[]): void;
   abstract readSnapshotValue(ref: ActorDescriptor, key: string): unknown;
-  abstract defer(method: Function, args: unknown[]): void;
 }
