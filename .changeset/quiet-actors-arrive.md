@@ -2,4 +2,4 @@
 "@mekakucity/actors": minor
 ---
 
-Add the actor library with transactional actions, typed references, compensation, and Effect integration.
+Add the runtime-independent actor contract, AsyncLocalStorage-scoped runtime injection, typed references, compensation, Effect integration, and the shared runtime conformance suite.
