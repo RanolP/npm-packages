@@ -65,21 +65,18 @@ export type DeepReadonly<Value> = Value extends { readonly type: string; readonl
       ? { readonly [Key in keyof Value]: DeepReadonly<Value[Key]> }
       : Value;
 
-export type ActorRefAction<T, Key extends keyof T> = T[Key] extends (...args: infer Args) => infer Result
+export type ActorRefAction<T, Key extends keyof T> = T[Key] extends (...args: infer Args) => PromiseLike<infer Result>
   ? IsAny<Awaited<Result>> extends true
     ? never
     : IsActionResultCloneable<Awaited<Result>> extends true
-      ? T[Key] & { runDetached(...args: Args): void }
+      ? OmitThisParameter<T[Key]> & { runDetached(...args: Args): void }
       : never
   : never;
 
 export type ActorRef<T> = ActorRefValue & {
-  readonly [Key in keyof T as T[Key] extends (...args: never[]) => infer Result
-    ? Result extends PromiseLike<unknown> ? Key : never
-    : never]:
-    ActorRefAction<T, Key>;
-} & {
-  readonly [Key in keyof T as T[Key] extends (...args: never[]) => unknown ? never : Key]: DeepReadonly<T[Key]>;
+  readonly [Key in keyof T]: T[Key] extends (...args: never[]) => unknown
+    ? ActorRefAction<T, Key>
+    : DeepReadonly<T[Key]>;
 };
 
 export type ActorInput<T> = T extends Actor<unknown, infer Input> ? Input : never;

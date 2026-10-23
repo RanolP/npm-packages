@@ -17,6 +17,10 @@ const result: Promise<number> = ref.increment(1);
 ref.increment.runDetached(1);
 // @ts-expect-error synchronous non-action methods are not exposed on refs.
 ref.helper();
+// @ts-expect-error ActorEffect.call rejects synchronous non-action methods.
+ActorEffect.call(ref, "helper");
+// @ts-expect-error ActorEffect.runDetached rejects synchronous non-action methods.
+ActorEffect.runDetached(ref, "helper");
 // @ts-expect-error nested state arrays are read-only.
 ref.values.push(3);
 void count;
@@ -30,6 +34,17 @@ const selfyResult: Promise<number> = explicitThisRef.selfy();
 const selfyEffect: Effect.Effect<number, ActorEffectError> = ActorEffect.call(explicitThisRef, "selfy");
 void selfyResult;
 void selfyEffect;
+
+class ExplicitThisOverloadedActor extends Actor<ExplicitThisOverloadedActor, {}> {
+  echo(this: ExplicitThisOverloadedActor, value: number): Promise<number>;
+  echo(this: ExplicitThisOverloadedActor, value: string): Promise<string>;
+  @action async echo(this: ExplicitThisOverloadedActor, value: number | string): Promise<number | string> { return value; }
+}
+declare const explicitThisOverloadedRef: ActorRef<ExplicitThisOverloadedActor>;
+// @ts-expect-error explicit-this overloads keep only the last signature.
+explicitThisOverloadedRef.echo(1);
+const explicitThisOverloadedString: Promise<string> = explicitThisOverloadedRef.echo("a");
+void explicitThisOverloadedString;
 
 class Money {
   constructor(readonly amount: number) {}
@@ -200,8 +215,14 @@ class MutualActorB extends Actor<MutualActorB, { peer: ActorRef<MutualActorA> }>
 }
 declare const mutualARef: ActorRef<MutualActorA>;
 declare const mutualBRef: ActorRef<MutualActorB>;
+const mutualBField: ActorRef<MutualActorB> = mutualARef.peer;
+const mutualAField: ActorRef<MutualActorA> = mutualBRef.peer;
 const mutualAResult: Promise<ActorRef<MutualActorB>> = mutualARef.callPeer(mutualBRef);
 const mutualBResult: Promise<ActorRef<MutualActorA>> = mutualBRef.callPeer(mutualARef);
+// @ts-expect-error MutualActorA.callPeer requires a MutualActorB reference.
+mutualARef.callPeer(ref);
+void mutualAField;
+void mutualBField;
 void mutualAResult;
 void mutualBResult;
 
