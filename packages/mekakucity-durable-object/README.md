@@ -81,3 +81,11 @@ class VisitCounter extends Actor<VisitCounter, { initial: number }> {
 ```
 
 When two classes are defined under the same id, the later one wins and `console.warn` names the id and both classes.
+
+## Scheduled detached delivery
+
+The runtime stores each scheduled detached message in the target actor's SQLite inbox with an absolute due time. The target's Durable Object alarm wakes at the earliest inbox due time, so scheduled delivery survives Durable Object eviction and restart. Eligible inbox messages run by due time and retain their send order when their due times match.
+
+Failed detached deliveries from a live actor are not retried automatically. The sending actor resends them when it next runs; if it never runs again, they remain pending. One failed row blocks every later row from the same sender. A collected actor instead retries its remaining release messages up to five times, after 5, 8, 13, 21, and 34 seconds. If all five retries fail, its storage and holds remain in place.
+
+An inbox action that remains in flight uses the same five alarm delays as a durable backstop. Its per-message wake count survives eviction; after the fifth wake finds the inbox row still present, the runtime logs the stuck action and leaves the row without another alarm.

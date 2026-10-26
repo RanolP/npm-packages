@@ -48,6 +48,19 @@ type IsStructuredCloneSafe<Value, Seen = never> = IsAny<Value> extends true
 
 export type StructuredCloneable<Value> = [IsStructuredCloneSafe<Value>] extends [true] ? Value : never;
 
+export type ActorScheduleOptions =
+  | { readonly after: { readonly ms: number }; readonly at?: never }
+  | { readonly at: Date; readonly after?: never };
+
+export interface ScheduledDetachedAction<Args extends unknown[]> {
+  runDetached(...args: Args): void;
+}
+
+type DetachedAction<Args extends unknown[]> = {
+  runDetached(...args: Args): void;
+  schedule(options: ActorScheduleOptions): ScheduledDetachedAction<Args>;
+};
+
 // Generic method inference can surface as unknown; preserve the original method signature in that case.
 type IsActionResultCloneable<Value> = unknown extends Value
   ? true
@@ -69,7 +82,7 @@ export type ActorRefAction<T, Key extends keyof T> = T[Key] extends (...args: in
   ? IsAny<Awaited<Result>> extends true
     ? never
     : IsActionResultCloneable<Awaited<Result>> extends true
-      ? T[Key] & { runDetached(...args: Args): void }
+      ? T[Key] & DetachedAction<Args>
       : never
   : never;
 
@@ -82,7 +95,7 @@ export type ActorRef<T> = ActorRefValue & {
 export type ActorSelfRef<T> = {
   readonly [Key in keyof T as ActorRefAction<T, Key> extends never ? never : Key]:
     ActorRefAction<T, Key> extends (...args: infer Args) => unknown
-      ? { runDetached(...args: Args): void }
+      ? DetachedAction<Args>
       : never;
 };
 

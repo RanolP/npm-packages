@@ -1,4 +1,4 @@
-import { ActorRuntimeError, type ActorDescriptor } from "@mekakucity/actors";
+import { ActorRuntimeError, type ActorDescriptor, type ActorDetachedSchedule } from "@mekakucity/actors";
 import { cloneOrThrow } from "@mekakucity/actors/runtime";
 import { invokeActorAction } from "../action/invoke.js";
 import { drainHolderOps, holdForMessage, releaseForMessage } from "../ref/lifecycle.js";
@@ -6,13 +6,14 @@ import { collectRefs } from "../ref/surface.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import { currentExecution } from "../transaction/context.js";
 import { finishRoot, newRoot } from "../transaction/root.js";
-import type { OutboxMessage } from "./message.js";
+import type { DueOutboxMessage, PendingOutboxMessage } from "./message.js";
 
 export const enqueueDetached = (
   memory: RuntimeMemory,
   ref: ActorDescriptor,
   actionName: string,
   args: unknown[],
+  schedule: ActorDetachedSchedule,
 ): void => {
   const context = currentExecution(memory, `Queue detached action ${actionName}`);
   const id = `message_${++memory.sequence.message}`;
@@ -24,12 +25,13 @@ export const enqueueDetached = (
     ),
   );
   const heldIds = new Set<string>([ref.id, ...collectRefs(memory, clonedArgs)]);
-  const message: OutboxMessage = {
+  const message: PendingOutboxMessage = {
     id,
     target: { type: ref.type, id: ref.id },
     action: actionName,
     args: clonedArgs,
     heldIds: [...heldIds],
+    schedule,
     ...(context.frame ? {} : { rootContext: true as const }),
   };
   if (context.frame) context.frame.outbox.push(message);
@@ -37,7 +39,7 @@ export const enqueueDetached = (
   holdForMessage(context.root, context.frame, message.heldIds, id);
 };
 
-export const dispatchDetached = async (memory: RuntimeMemory, message: OutboxMessage): Promise<void> => {
+export const dispatchDetached = async (memory: RuntimeMemory, message: DueOutboxMessage): Promise<void> => {
   const root = newRoot(memory);
   try {
     await invokeActorAction(memory, root, message.target.id, message.action, [...message.args], undefined, new Set());

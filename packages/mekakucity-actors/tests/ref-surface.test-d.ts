@@ -20,6 +20,21 @@ test("actor refs expose asynchronous actions and read-only cloneable state", () 
   expectTypeOf(ref.count).toEqualTypeOf<number>();
   expectTypeOf(ref.increment(1)).toEqualTypeOf<Promise<number>>();
   ref.increment.runDetached(1);
+  ref.increment.schedule({ after: { ms: 1000 } }).runDetached(1);
+  ref.increment.schedule({ at: new Date() }).runDetached(1);
+  // @ts-expect-error a schedule accepts exactly one timing form.
+  ref.increment.schedule({ after: { ms: 1000 }, at: new Date() });
+  // @ts-expect-error a schedule requires one timing form.
+  ref.increment.schedule({});
+  // @ts-expect-error after requires an object containing milliseconds.
+  ref.increment.schedule({ after: 1000 });
+  // @ts-expect-error the scheduled detached object is not callable.
+  ref.increment.schedule({ after: { ms: 1000 } })(1);
+  // @ts-expect-error the scheduled detached object exposes only runDetached.
+  ref.increment.schedule({ after: { ms: 1000 } }).foo;
+  // @ts-expect-error scheduled detached calls return void rather than a Promise result.
+  const scheduledResult: Promise<void> = ref.increment.schedule({ after: { ms: 1000 } }).runDetached(1);
+  void scheduledResult;
   // @ts-expect-error synchronous non-action methods are not exposed on refs.
   ref.helper();
   // @ts-expect-error nested state arrays are read-only.

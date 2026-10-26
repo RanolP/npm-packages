@@ -1,5 +1,5 @@
 import { actorHolder, applyHolderOp, type HolderOp } from "@mekakucity/actors/runtime";
-import type { OutboxMessage } from "../outbox/message.js";
+import type { DueOutboxMessage } from "../outbox/message.js";
 
 export interface ActorRecord {
   readonly id: string;
@@ -16,9 +16,9 @@ export interface ActorRecord {
 export class InMemoryStore {
   private readonly actors = new Map<string, ActorRecord>();
   private readonly named = new Map<string, string>();
-  private deliveryHandler: ((message: OutboxMessage) => Promise<void>) | undefined;
+  private deliveryHandler: ((message: DueOutboxMessage) => Promise<void>) | undefined;
 
-  setDeliveryHandler(handler: (message: OutboxMessage) => Promise<void>): void {
+  setDeliveryHandler(handler: (message: DueOutboxMessage) => Promise<void>): void {
     this.deliveryHandler = handler;
   }
 
@@ -46,7 +46,7 @@ export class InMemoryStore {
     return this.named.get(`${type}\0${key}`);
   }
 
-  async deliver(message: OutboxMessage): Promise<void> {
+  async deliver(message: DueOutboxMessage): Promise<void> {
     if (!this.deliveryHandler) throw new Error("No outbox delivery handler is configured");
     await this.deliveryHandler(message);
   }

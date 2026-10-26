@@ -11,3 +11,9 @@ export class ActorSelfRefUnavailableError extends ActorRuntimeError {
     super("Actor.asRef is available only after actor construction and during an active actor action", options);
   }
 }
+
+export class ActorScheduleError extends ActorRuntimeError {
+  constructor(message: string) {
+    super(`Invalid actor schedule: ${message}`);
+  }
+}

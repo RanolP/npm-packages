@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Actor } from "../core/actor.js";
 import type { ActorInput, ActorRef, ActorRefInit } from "../ref/types.js";
-import { NoActiveActorRuntimeError } from "./errors.js";
+import { ActorRuntimeError, NoActiveActorRuntimeError } from "./errors.js";
 
 export type ActorConstructor<T extends Actor<unknown, unknown>> = new (input: ActorInput<T>) => T;
 
@@ -9,6 +9,38 @@ export interface ActorDescriptor {
   readonly type: string;
   readonly id: string;
 }
+
+export type ActorDetachedSchedule =
+  | { readonly afterMs: number }
+  | { readonly dueAt: number };
+
+export const MAX_ACTOR_DUE_AT = 8_640_000_000_000_000;
+
+export type PendingActorMessage<Message extends object> = Message & {
+  readonly schedule: ActorDetachedSchedule;
+  readonly dueAt?: never;
+};
+
+export type DueActorMessage<Message extends object> = Omit<PendingActorMessage<Message>, "schedule" | "dueAt"> & {
+  readonly schedule?: never;
+  readonly dueAt: number;
+};
+
+export const resolveDueAt = (schedule: ActorDetachedSchedule, committedAt: number): number => {
+  const dueAt = "afterMs" in schedule ? committedAt + schedule.afterMs : schedule.dueAt;
+  if (!Number.isFinite(dueAt) || Math.abs(dueAt) > MAX_ACTOR_DUE_AT) {
+    throw new ActorRuntimeError("Detached message due time must be within the valid Date range");
+  }
+  return dueAt;
+};
+
+export const resolveActorMessage = <Message extends object>(
+  message: PendingActorMessage<Message>,
+  committedAt: number,
+): DueActorMessage<Message> => {
+  const { schedule, dueAt: _dueAt, ...pending } = message;
+  return { ...pending, dueAt: resolveDueAt(schedule, committedAt) };
+};
 
 const activeRuntime = new AsyncLocalStorage<ActorRuntime>();
 
@@ -30,6 +62,11 @@ export abstract class ActorRuntime {
   abstract selfDescriptorOf(instance: object): ActorDescriptor;
   abstract invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown>;
   abstract invokeLocalAction(instance: object, actionName: string, args: unknown[], run: () => unknown): unknown;
-  abstract runDetached(ref: ActorDescriptor, actionName: string, args: unknown[]): void;
+  abstract runDetached(
+    ref: ActorDescriptor,
+    actionName: string,
+    args: unknown[],
+    schedule: ActorDetachedSchedule,
+  ): void;
   abstract readSnapshotValue(ref: ActorDescriptor, key: string): unknown;
 }

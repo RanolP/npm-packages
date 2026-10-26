@@ -4,6 +4,7 @@ import {
   ActorSelfRefUnavailableError,
   type ActorConstructor,
   type ActorDescriptor,
+  type ActorDetachedSchedule,
   type ActorInput,
   type ActorRef,
   type ActorRefInit,
@@ -18,15 +19,77 @@ import { readSnapshotValue } from "./state/snapshot.js";
 import { inMemoryActorRuntimeTestHooks, type InMemoryActorRuntimeTestHooks } from "./testing.js";
 import { currentExecution } from "./transaction/context.js";
 import { runTransaction } from "./transaction/root.js";
+import type { DueOutboxMessage } from "./outbox/message.js";
+
+const DELIVERY_TICK_MS = 60_000;
+
+interface PendingDelivery {
+  readonly message: DueOutboxMessage;
+  readonly sequence: number;
+  timeout?: ReturnType<typeof setTimeout>;
+}
 
 export class InMemoryActorRuntime extends ActorRuntime {
   readonly #memory = createRuntimeMemory();
+  readonly #pendingDeliveries: PendingDelivery[] = [];
+  readonly #deliveryTails = new Map<string, Promise<void>>();
+  #deliverySequence = 0;
+  #deliveryInterval: ReturnType<typeof setInterval> | undefined;
 
   constructor() {
     super();
-    this.#memory.backend.setDeliveryHandler(async (message) => {
-      void this.withActiveRuntime(() => dispatchDetached(this.#memory, message));
+    this.#memory.backend.setDeliveryHandler((message) => {
+      this.#pendingDeliveries.push({ message, sequence: ++this.#deliverySequence });
+      this.#pendingDeliveries.sort((left, right) =>
+        left.message.dueAt - right.message.dueAt || left.sequence - right.sequence);
+      this.#startDeliveryInterval();
+      this.#tickDeliveries();
+      return Promise.resolve();
     });
+  }
+
+  #startDeliveryInterval(): void {
+    if (this.#deliveryInterval !== undefined || this.#pendingDeliveries.length === 0) return;
+    this.#deliveryInterval = setInterval(() => this.#tickDeliveries(), DELIVERY_TICK_MS);
+    this.#deliveryInterval.unref();
+  }
+
+  #tickDeliveries(): void {
+    if (this.#pendingDeliveries.length === 0) {
+      if (this.#deliveryInterval !== undefined) clearInterval(this.#deliveryInterval);
+      this.#deliveryInterval = undefined;
+      return;
+    }
+    const now = Date.now();
+    for (const delivery of this.#pendingDeliveries) {
+      const wait = delivery.message.dueAt - now;
+      if (wait > DELIVERY_TICK_MS) break;
+      if (delivery.timeout !== undefined) continue;
+      delivery.timeout = setTimeout(() => {
+        delivery.timeout = undefined;
+        this.#drainDeliveries();
+      }, Math.max(0, wait));
+      delivery.timeout.unref();
+    }
+  }
+
+  #drainDeliveries(): void {
+    for (let next = this.#pendingDeliveries[0]; next?.message.dueAt <= Date.now(); next = this.#pendingDeliveries[0]) {
+      this.#pendingDeliveries.shift();
+      if (next.timeout !== undefined) clearTimeout(next.timeout);
+      const targetId = next.message.target.id;
+      const previous = this.#deliveryTails.get(targetId) ?? Promise.resolve();
+      const run = () => this.withActiveRuntime(() => dispatchDetached(this.#memory, next.message));
+      let tail: Promise<void>;
+      tail = previous
+        .then(run, run)
+        .catch((error) => console.error(`InMemoryActorRuntime: detached dispatch to ${targetId} failed`, error))
+        .finally(() => {
+          if (this.#deliveryTails.get(targetId) === tail) this.#deliveryTails.delete(targetId);
+        });
+      this.#deliveryTails.set(targetId, tail);
+    }
+    this.#tickDeliveries();
   }
 
   run<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>> {
@@ -60,8 +123,8 @@ export class InMemoryActorRuntime extends ActorRuntime {
     return invokeLocal(this.#memory, instance, actionName, args, run);
   }
 
-  runDetached(ref: ActorDescriptor, actionName: string, args: unknown[]): void {
-    enqueueDetached(this.#memory, ref, actionName, args);
+  runDetached(ref: ActorDescriptor, actionName: string, args: unknown[], schedule: ActorDetachedSchedule): void {
+    enqueueDetached(this.#memory, ref, actionName, args, schedule);
   }
 
   readSnapshotValue(ref: ActorDescriptor, key: string): unknown {
