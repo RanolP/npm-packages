@@ -1,0 +1,10 @@
+{
+  "name": "mekakucity-durable-object-test",
+  "main": "tests/worker.ts",
+  "compatibility_date": "2026-10-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "ACTOR_HOST", "class_name": "ActorHost" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ActorHost"] }]
+}
