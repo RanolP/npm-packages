@@ -49,7 +49,7 @@ export class InMemoryActorRuntime extends ActorRuntime {
     const id = this.#memory.instanceIds.get(instance);
     const context = currentExecution(this.#memory, "Read Actor.asRef");
     if (!id || !context.frame || context.frame.record.id !== id) throw new ActorSelfRefUnavailableError();
-    return { type: typeName(this.#memory, instance.constructor), id };
+    return { type: typeName(instance.constructor), id };
   }
 
   invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {

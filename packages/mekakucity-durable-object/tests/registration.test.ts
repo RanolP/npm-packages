@@ -1,15 +1,15 @@
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
-import { Actor, action } from "@mekakucity/actors";
+import { Actor, ActorRuntimeError, action, actor, type ActorRef } from "@mekakucity/actors";
 import { describe, expect, test } from "vitest";
-import { DurableObjectActorRuntime, defineActorHost } from "../src/index.js";
+import { DurableObjectActorRuntime } from "../src/index.js";
+import { createHostRuntimeCore } from "../src/runtime.js";
 import { TallyActor } from "./registered-actors.js";
 
-// No allowUnregisteredTypes(scope) here: these runtimes see only what tests/worker.ts passed to defineActorHost.
 const newRuntime = (scope: string) => new DurableObjectActorRuntime(env.ACTOR_HOST, { scope });
 const stubOf = (ref: { id: string }) => env.ACTOR_HOST.get(env.ACTOR_HOST.idFromString(ref.id));
 
-describe("defineActorHost registration", () => {
+describe("@actor registration", () => {
   // Regression: a host resolved actor classes only from registrations the caller made in the same isolate, so a
   // Durable Object woken in a fresh isolate of a deployed worker threw "Actor type ... is not registered".
   test("a reloaded host runs a stored actor using only the module-load registration", async () => {
@@ -21,7 +21,7 @@ describe("defineActorHost registration", () => {
     });
     const meta = await runInDurableObject(stubOf(ref), (_instance, state) => state.storage.kv.get<{ type: string }>("meta"));
     expect(meta?.type).toBe("Tally");
-    // Drops the host's in-memory actor, so the next call loads the class from the stored type name again.
+    // Drops the host's in-memory actor, so the next call loads the class from the stored type id again.
     await runInDurableObject(stubOf(ref), (_instance, state) => state.abort()).catch(() => {});
 
     const count = await newRuntime(scope).run(async () =>
@@ -29,20 +29,37 @@ describe("defineActorHost registration", () => {
     expect(count).toBe(2);
   });
 
-  // Regression: spawning silently registered any class, so a worker missing it in defineActorHost only failed
-  // later, on a host in another isolate.
-  test("spawning a class missing from defineActorHost throws in the caller and names it", async () => {
+  // Regression: @action registered only when an instance was constructed, and a worker never constructs the
+  // actors it calls (they live in their ActorHost), so its refs had no action methods: `counter.add is not a function`.
+  test("a ref built in an isolate that never constructed the actor exposes its actions", () => {
+    @actor("registration/NeverConstructed")
+    class NeverConstructed extends Actor<NeverConstructed, {}> {
+      @action async add(amount: number): Promise<number> { return amount; }
+    }
+    const core = createHostRuntimeCore(env.ACTOR_HOST, crypto.randomUUID());
+    const ref: ActorRef<NeverConstructed> = core.makeRef("registration/NeverConstructed", env.ACTOR_HOST.newUniqueId().toString());
+    expect(typeof ref.add).toBe("function");
+  });
+
+  test("spawning a class without @actor throws in the caller and names it", async () => {
     class Stray extends Actor<Stray, {}> {
       @action async ping() {}
     }
     await expect(newRuntime(crypto.randomUUID()).run(() => Actor.spawn(Stray, {})))
-      .rejects.toThrow(/Stray.*defineActorHost/);
+      .rejects.toThrow(/Stray.*@actor\(id\)/);
   });
 
-  test("defineActorHost rejects a name or class bound twice inconsistently", () => {
-    class Other extends Actor<Other, {}> {}
-    expect(() => defineActorHost({ Tally: TallyActor })).not.toThrow();
-    expect(() => defineActorHost({ Tally: Other })).toThrow(/"Tally"/);
-    expect(() => defineActorHost({ TallyAgain: TallyActor })).toThrow(/TallyActor/);
+  test("a ref for a type id no loaded class carries throws instead of building a ref without actions", async () => {
+    const runtime = newRuntime(crypto.randomUUID());
+    await expect(runtime.run(() => Actor.refreshValues({ type: "registration/Missing", id: env.ACTOR_HOST.newUniqueId().toString() })))
+      .rejects.toThrow(ActorRuntimeError);
+  });
+
+  test("@actor rejects an id already bound to another class", () => {
+    expect(() => {
+      @actor("Tally")
+      class Other extends Actor<Other, {}> {}
+      return Other;
+    }).toThrow(/"Tally".*TallyActor/);
   });
 });

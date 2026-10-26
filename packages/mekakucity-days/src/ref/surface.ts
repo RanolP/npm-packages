@@ -6,7 +6,9 @@ import {
 } from "@mekakucity/actors";
 import {
   collectActorRefIds,
+  actorClassOrThrow,
   actorRefSurfaceFor,
+  actorTypeIdOrThrow,
   createActorRef,
   hydrateActorRefs,
   isActorDescriptor,
@@ -16,14 +18,8 @@ import { commitSegment } from "../state/commit.js";
 import { cacheBackendSnapshot } from "../state/snapshot.js";
 import { currentExecution } from "../transaction/context.js";
 
-export const typeName = (memory: RuntimeMemory, ctor: Function): string => {
-  let id = memory.typeIds.get(ctor);
-  if (!id) {
-    id = ctor.name || `ActorType${memory.knownTypes.size + 1}`;
-    memory.typeIds.set(ctor, id);
-  }
-  return id;
-};
+/** The @actor id of `ctor`; throws, naming the class, when it lacks the decorator. */
+export const typeName = (ctor: Function): string => actorTypeIdOrThrow(ctor);
 
 export const isKnownRef = <T extends Actor<unknown, unknown>>(
   memory: RuntimeMemory,
@@ -40,11 +36,8 @@ export const makeRef = <T extends Actor<unknown, unknown>>(
   type: string,
   id: string,
 ): ActorRef<T> => {
-  const ctor = memory.knownTypes.get(type);
-  const ref = createActorRef<T>(
-    { type, id },
-    ctor ? actorRefSurfaceFor(ctor) : { values: [], actions: [], getters: [] },
-  );
+  const ctor = memory.knownTypes.get(type) ?? actorClassOrThrow(type);
+  const ref = createActorRef<T>({ type, id }, actorRefSurfaceFor(ctor));
   memory.refs.add(ref);
   memory.snapshotCache.track(ref, id);
   return ref;

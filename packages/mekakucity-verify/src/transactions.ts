@@ -1,4 +1,4 @@
-import { Actor, ActorStateSerializationError, NoActiveActorRuntimeError, action, state } from "@mekakucity/actors";
+import { Actor, actor, ActorStateSerializationError, NoActiveActorRuntimeError, action, state } from "@mekakucity/actors";
 import type { ActorRef } from "@mekakucity/actors";
 import type { ActorRuntime } from "@mekakucity/actors/runtime";
 import { describe, expect } from "vitest";
@@ -14,6 +14,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
     await expect(runtime.run(() => { throw runFailure; })).rejects.toBe(runFailure);
 
     const actionFailure = new Error("action failure");
+    @actor("verify/transactions/FailingActor")
     class FailingActor extends Actor<FailingActor, {}> {
       @action async fail() { throw actionFailure; }
     }
@@ -26,9 +27,11 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
 
   itOutsideRuntime("keeps a cross-actor segment committed before its run fails", async () => {
     const runtime = factory();
+    @actor("verify/transactions/Peer")
     class Peer extends Actor<Peer, {}> {
       @action async ping() { return "pong"; }
     }
+    @actor("verify/transactions/Counter")
     class Counter extends Actor<Counter, { peer: ActorRef<Peer> }> {
       @state accessor value = 0;
       @state accessor peer = this.input.peer;
@@ -55,6 +58,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
 
   itOutsideRuntime("does not overwrite a concurrent commit when another run fails", async () => {
     const runtime = factory();
+    @actor("verify/transactions/NamedCounter")
     class NamedCounter extends Actor<NamedCounter, {}> {
       @state accessor value = 0;
       @action async set(value: number) { this.value = value; }
@@ -85,6 +89,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
   });
 
   it("rejects non-structured-cloneable state at commit and rolls back", async (runtime) => {
+    @actor("verify/transactions/SerializableActor")
     class SerializableActor extends Actor<SerializableActor, {}> {
       @state accessor value: unknown = "safe";
       @action async breakState() { this.value = () => "not cloneable"; }
@@ -101,6 +106,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
     const releaseFirst = deferred();
     const firstStarted = deferred();
     const events: string[] = [];
+    @actor("verify/transactions/MailboxActor")
     class MailboxActor extends Actor<MailboxActor, {}> {
       @action async work(label: string) {
         events.push(`start:${label}`);
@@ -126,6 +132,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
   });
 
   it("rolls back an action and isolates caught same-actor sub-transaction failures", async (runtime) => {
+    @actor("verify/transactions/NestedActor")
     class NestedActor extends Actor<NestedActor, {}> {
       @state accessor count = 0;
       @action async childFailure() { this.count += 10; throw new Error("child"); }
@@ -149,9 +156,11 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
   it("commits before a cross-actor await and holds the caller mailbox until the reply", async (runtime) => {
     const entered = deferred();
     const release = deferred();
+    @actor("verify/transactions/GateActor")
     class GateActor extends Actor<GateActor, {}> {
       @action async pause() { entered.resolve(); await release.promise; }
     }
+    @actor("verify/transactions/WaitingActor")
     class WaitingActor extends Actor<WaitingActor, { gate: ActorRef<GateActor> }> {
       @state accessor value = 0;
       @state accessor gate = this.input.gate;
@@ -180,9 +189,11 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
   });
 
   it("re-persists the action start snapshot after a nested cross-actor commit then failure", async (runtime) => {
+    @actor("verify/transactions/CommitPointActor")
     class CommitPointActor extends Actor<CommitPointActor, {}> {
       @action async ping() { return "pong"; }
     }
+    @actor("verify/transactions/RollbackAfterCommitActor")
     class RollbackAfterCommitActor extends Actor<RollbackAfterCommitActor, { peer: ActorRef<CommitPointActor> }> {
       @state accessor n = 0;
       @state accessor peer = this.input.peer;
@@ -200,6 +211,7 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
   });
 
   it("named actors reuse one rooted instance and actor operations require a runtime run", async (runtime) => {
+    @actor("verify/transactions/NamedCounter#2")
     class NamedCounter extends Actor<NamedCounter, { count: number }> {
       @state accessor count = this.input.count;
     }

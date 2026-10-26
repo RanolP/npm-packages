@@ -1,21 +1,17 @@
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
-import { Actor, ActorKilledError, action, state, type ActorRef } from "@mekakucity/actors";
+import { Actor, actor, ActorKilledError, action, state, type ActorRef } from "@mekakucity/actors";
 import { actorHolder, messageHolder, NAMED_ROOT, type HolderOp } from "@mekakucity/actors/runtime";
 import { describe, expect, test } from "vitest";
 import { DurableObjectActorRuntime } from "../src/index.js";
-import { allowUnregisteredTypes } from "../src/testing.js";
 import { Outbox } from "../src/outbox.js";
 
+@actor("host-holders/Probe")
 class Probe extends Actor<Probe, {}> {
   @action async ping(): Promise<string> { return "alive"; }
 }
 
-const newRuntime = () => {
-  const scope = crypto.randomUUID();
-  allowUnregisteredTypes(scope);
-  return new DurableObjectActorRuntime(env.ACTOR_HOST, { scope });
-};
+const newRuntime = () => new DurableObjectActorRuntime(env.ACTOR_HOST, { scope: crypto.randomUUID() });
 const stubOf = (ref: { id: string }) => env.ACTOR_HOST.get(env.ACTOR_HOST.idFromString(ref.id));
 const storedKeys = (ref: { id: string }) =>
   runInDurableObject(stubOf(ref), (_instance, state) => [...state.storage.kv.list()].map(([key]) => key));
@@ -89,6 +85,7 @@ describe("ActorHost holder protocol", () => {
   // hold(tx) reached the spawned child; the caller's release arrived first, the late hold re-added a holder
   // nobody releases, and the child lived forever.
   test("an invoke replies only after its commit's holder ops left a busy outbox", async () => {
+    @actor("host-holders/Spawner")
     class Spawner extends Actor<Spawner, {}> {
       @action async makeChild(): Promise<ActorRef<Probe>> { return Actor.spawn(Probe, {}); }
     }
@@ -110,6 +107,7 @@ describe("ActorHost holder protocol", () => {
   // Regression (review F4): a sender that lost deliverMessage's ack redelivers the row after the action already
   // ran and its inbox key was deleted; without the sender watermark the detached action ran twice.
   test("a redelivered detached message whose action already ran is acked without running again", async () => {
+    @actor("host-holders/Counter")
     class Counter extends Actor<Counter, {}> {
       @state accessor count = 0;
       @action async hit() { this.count += 1; }
@@ -135,6 +133,7 @@ describe("ActorHost holder protocol", () => {
   // hold(tx:root) still went out on the alarm retry; the caller never learned the id, so the child lived forever.
   test("an invoke rejected by a failed delivery releases the holds its commit queued", async () => {
     let childId: string | undefined;
+    @actor("host-holders/LeakySpawner")
     class LeakySpawner extends Actor<LeakySpawner, {}> {
       @action async makeChild(): Promise<ActorRef<Probe>> {
         const child = await Actor.spawn(Probe, {});
@@ -164,10 +163,12 @@ describe("ActorHost holder protocol", () => {
   // Regression (review R2): a receiver kept one seen:<sender> watermark per sender forever, so a long-lived
   // named receiver grew a row for every anonymous sender that ever messaged it.
   test("a collected sender's seen watermark is removed from the receiver", async () => {
+    @actor("host-holders/Receiver")
     class Receiver extends Actor<Receiver, {}> {
       @state accessor count = 0;
       @action async hit() { this.count += 1; }
     }
+    @actor("host-holders/Sender")
     class Sender extends Actor<Sender, { receiver: ActorRef<Receiver> }> {
       @state accessor receiver = this.input.receiver;
       @action async send() { this.receiver.hit.runDetached(); }
@@ -190,9 +191,11 @@ describe("ActorHost holder protocol", () => {
   // a failed invoke's own cleanup release also dropped the hold an earlier successful reply placed on the same
   // ref, and the ref was collected while the root still used it.
   test("a failed invoke's cleanup keeps another reply's hold on the same ref until the root ends", async () => {
+    @actor("host-holders/Maker")
     class Maker extends Actor<Maker, {}> {
       @action async make(): Promise<ActorRef<Probe>> { return Actor.spawn(Probe, {}); }
     }
+    @actor("host-holders/Echo")
     class Echo extends Actor<Echo, {}> {
       @action async echo(ref: ActorRef<Probe>): Promise<ActorRef<Probe>> { return ref; }
     }
@@ -223,9 +226,11 @@ describe("ActorHost holder protocol", () => {
 
   // Regression (review N1): a sender kept sent:<target> for every actor it ever messaged, even ones that died.
   test("a dead ack clears the sender's sent:<target> key", async () => {
+    @actor("host-holders/Receiver#2")
     class Receiver extends Actor<Receiver, {}> {
       @action async hit() {}
     }
+    @actor("host-holders/Sender#2")
     class Sender extends Actor<Sender, {}> {
       @action async send(receiver: ActorRef<Receiver>) { receiver.hit.runDetached(); }
     }

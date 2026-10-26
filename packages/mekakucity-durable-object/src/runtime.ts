@@ -39,7 +39,7 @@ import { unwrap } from "./errors.js";
 import type { ActorHost } from "./host.js";
 import { groupOps } from "./outbox.js";
 import { stubOf, type ActorHostRpc, type ActorView, type CallContext, type OutboxMessage } from "./protocol.js";
-import { isKnownType, lookupType, typeNameOf, type RegisteredType } from "./registry.js";
+import { isKnownType, lookupType, typeNameOf } from "./registry.js";
 import { snapshots } from "./snapshots.js";
 
 export type StateData = Record<string, unknown>;
@@ -87,7 +87,7 @@ export interface LocalActor {
 }
 
 export interface DurableObjectActorRuntimeOptions {
-  /** Separates named-actor keys; runtimes that share a scope share named actors. Types are worker-wide. */
+  /** Separates named-actor keys; runtimes that share a scope share named actors. Types (@actor ids) are worker-wide. */
   readonly scope?: string;
 }
 
@@ -124,7 +124,7 @@ export class RuntimeCore {
   // ---- refs and snapshots ------------------------------------------------
 
   isDescriptor = (candidate: unknown): candidate is ActorDescriptor =>
-    isActorDescriptor(candidate, (type) => isKnownType(type, this.scope));
+    isActorDescriptor(candidate, isKnownType);
 
   /** #refs holds only what makeRef built, so a ref passed back as ActorRef<T> | ActorDescriptor is that ActorRef<T>. */
   #isOwnRef<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): ref is ActorRef<T> {
@@ -132,11 +132,7 @@ export class RuntimeCore {
   }
 
   makeRef<T extends Actor<unknown, unknown>>(type: string, id: string): ActorRef<T> {
-    const Type = lookupType(type, this.scope)?.Type;
-    const ref = createActorRef<T>(
-      { type, id },
-      Type ? actorRefSurfaceFor(Type) : { values: [], actions: [], getters: [] },
-    );
+    const ref = createActorRef<T>({ type, id }, actorRefSurfaceFor(lookupType(type).Type));
     this.#refs.add(ref);
     snapshots.track(ref, id);
     return ref;
@@ -222,7 +218,7 @@ export class RuntimeCore {
   ): Promise<ActorRef<T>> {
     const named = nameKey !== undefined;
     const context = this.current(named ? "Actor.ofNamed(...).orSpawn" : "Actor.spawn");
-    const type = typeNameOf(this.scope, Type);
+    const type = typeNameOf(Type);
     const id = named ? this.namedId(type, nameKey) : this.binding.newUniqueId().toString();
     const holder = named
       ? NAMED_ROOT
@@ -251,7 +247,7 @@ export class RuntimeCore {
 
   named<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T> {
     this.current("Actor.ofNamed");
-    const type = typeNameOf(this.scope, Type);
+    const type = typeNameOf(Type);
     const id = this.namedId(type, key);
     const lookup = async (): Promise<ActorRef<T> | null> => {
       const view = unwrap(await this.stub(id).view());
@@ -360,12 +356,6 @@ export class RuntimeCore {
     return deepFreeze(this.hydrate(structuredClone(entry.data[key])));
   }
 }
-
-export const lookupTypeOrThrow = (type: string, scope: string): RegisteredType => {
-  const Type = lookupType(type, scope);
-  if (!Type) throw new ActorRuntimeError(`Actor type "${type}" is not registered; pass its class to defineActorHost({ ... }) in the worker entry`);
-  return Type;
-};
 
 // Assigned in DurableObjectActorRuntime's static block, the only place that can read #core.
 let coreOf: (runtime: DurableObjectActorRuntime) => RuntimeCore;

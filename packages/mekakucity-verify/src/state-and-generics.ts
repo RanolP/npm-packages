@@ -1,4 +1,4 @@
-import { Actor, action, state } from "@mekakucity/actors";
+import { Actor, actor, action, state } from "@mekakucity/actors";
 import type { Cloneable } from "@mekakucity/actors";
 import type { ActorRuntime } from "@mekakucity/actors/runtime";
 import { describe, expect } from "vitest";
@@ -8,6 +8,7 @@ export const stateAndGenericsSuite = (factory: () => ActorRuntime, hooks?: Actor
   const { it } = createRuntimeTestTools(factory, hooks);
   describe("@mekakucity/actors state, getters, and generics", () => {
   it("keeps ref getters defined and current with state", async (runtime) => {
+    @actor("verify/state-and-generics/GetterCounter")
     class GetterCounter extends Actor<GetterCounter, {}> {
       @state accessor count = 1;
       get doubled() { return this.count * 2; }
@@ -27,6 +28,7 @@ export const stateAndGenericsSuite = (factory: () => ActorRuntime, hooks?: Actor
   });
 
   it("generic actor classes work when spawned with a pinned item type", async (runtime) => {
+    @actor("verify/state-and-generics/Queue")
     class Queue<T extends Cloneable> extends Actor<Queue<T>, { items: T[] }> {
       @state accessor items: T[] = this.input.items;
       @action async push(item: T) { this.items = [...this.items, item]; }
@@ -58,6 +60,7 @@ export const stateAndGenericsSuite = (factory: () => ActorRuntime, hooks?: Actor
   });
 
   it("generic action methods keep their call-site type on refs", async (runtime) => {
+    @actor("verify/state-and-generics/EchoActor")
     class EchoActor extends Actor<EchoActor, {}> {
       @action async echo<T extends Cloneable>(value: T): Promise<T> { return value; }
     }

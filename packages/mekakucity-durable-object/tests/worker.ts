@@ -1,7 +1,7 @@
-import { defineActorHost } from "../src/index.js";
-import { TallyActor } from "./registered-actors.js";
+// The worker entry imports every actor module, so a Durable Object woken in a fresh isolate finds its class.
+import "./registered-actors.js";
 
-export const ActorHost = defineActorHost({ Tally: TallyActor });
+export { ActorHost } from "../src/index.js";
 
 export default {
   fetch(): Response {

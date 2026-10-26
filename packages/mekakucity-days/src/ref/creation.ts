@@ -22,7 +22,7 @@ export const createActor = async <T extends Actor<unknown, unknown>>(
   nameKey?: string,
 ): Promise<ActorRef<T>> => {
   const context = currentExecution(memory, named ? "Actor.ofNamed(...).orSpawn" : "Actor.spawn");
-  const type = typeName(memory, Type);
+  const type = typeName(Type);
   memory.knownTypes.set(type, Type);
   const id = `actor_${++memory.sequence.actor}`;
   const holder = creationHolder(named, context.root, context.frame, id);
@@ -83,7 +83,7 @@ export const namedActor = <T extends Actor<unknown, unknown>>(
   key: string,
 ): ActorRefInit<T> => {
   currentExecution(memory, "Actor.ofNamed");
-  const type = typeName(memory, Type);
+  const type = typeName(Type);
   memory.knownTypes.set(type, Type);
   return {
     orSpawn: async (factory) => {

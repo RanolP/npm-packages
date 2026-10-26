@@ -26,6 +26,7 @@ import {
 } from "@mekakucity/actors/runtime";
 import { capture } from "./errors.js";
 import { Outbox } from "./outbox.js";
+import { lookupType } from "./registry.js";
 import {
   stubOf,
   type ActorHostRpc,
@@ -41,7 +42,6 @@ import {
 } from "./protocol.js";
 import {
   createHostRuntimeCore,
-  lookupTypeOrThrow,
   type ActionFrame,
   type RootTransaction,
   type RuntimeCore,
@@ -141,7 +141,7 @@ export class ActorHost extends DurableObject<Env> {
         throw new ActorRuntimeError(`Actor ${this.#id} already exists`);
       }
       const core = createHostRuntimeCore(this.#binding(), request.scope);
-      const Type = lookupTypeOrThrow(request.type, request.scope);
+      const Type = lookupType(request.type);
       const meta: ActorMeta = { scope: request.scope, type: request.type, named: request.named, input: request.input };
       const actor: HostedActor = {
         id: this.#id,
@@ -282,7 +282,7 @@ export class ActorHost extends DurableObject<Env> {
       return undefined;
     }
     const core = createHostRuntimeCore(this.#binding(), meta.scope);
-    const Type = lookupTypeOrThrow(meta.type, meta.scope);
+    const Type = lookupType(meta.type);
     const snapshot = this.#kv.get<StateData>(SNAPSHOT) ?? {};
     const actor: HostedActor = {
       id: this.#id,

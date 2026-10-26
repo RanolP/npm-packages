@@ -1,6 +1,6 @@
 import { Cause, Context, Effect, Exit } from "effect"
 import { describe, expect } from "vitest"
-import { action, Actor, state } from "@mekakucity/actors"
+import { action, Actor, actor, state } from "@mekakucity/actors"
 import { ActorEffect, NoActiveActorRuntimeError } from "@mekakucity/actors/effect"
 import type { ActorRef } from "@mekakucity/actors"
 import type { ActorRuntime } from "@mekakucity/actors/runtime"
@@ -22,6 +22,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
   const { it, itOutsideRuntime } = createRuntimeTestTools(factory)
   describe("@mekakucity/actors/effect", () => {
   itOutsideRuntime("maps a missing runtime to its matching Effect tag", async () => {
+    @actor("verify/effect/EmptyActor")
     class EmptyActor extends Actor<EmptyActor, {}> {}
     const error = await Effect.runPromise(ActorEffect.spawn(EmptyActor, {}).pipe(
       Effect.catchTag("NoActiveActorRuntimeError", (cause) => Effect.succeed(cause)),
@@ -32,6 +33,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
   })
 
   it("runs actor effects inside the transaction's AsyncLocalStorage context", async (runtime) => {
+    @actor("verify/effect/Counter")
     class Counter extends Actor<Counter, { value: number }> {
       @state accessor value = this.input.value
       @action async add(amount: number) {
@@ -55,6 +57,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
   })
 
   it("maps unknown action failures to a catchable tagged error with the original cause", async (runtime) => {
+    @actor("verify/effect/FailingActor")
     class FailingActor extends Actor<FailingActor, {}> {
       @action async fail() { throw "user failure"; }
     }
@@ -83,6 +86,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
     interface BouncePeer {
       bounce(): Promise<void>
     }
+    @actor("verify/effect/RingActor")
     class RingActor extends Actor<RingActor, { peer?: ActorRef<BouncePeer> }> {
       @state accessor peer: ActorRef<BouncePeer> | null = this.input.peer ?? null
       @action async bounce(): Promise<void> {
@@ -107,6 +111,7 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
 
   it("provides named lookup and detached delivery as effects", async (runtime) => {
     const delivered = deferred()
+    @actor("verify/effect/SignalActor")
     class SignalActor extends Actor<SignalActor, {}> {
       @action async signal() { delivered.resolve(); }
     }
@@ -121,10 +126,11 @@ export const effectSuite = (factory: () => ActorRuntime): void => {
       }),
     ))
     await delivered.promise
-    expect(ref.type).toBe("SignalActor")
+    expect(ref.type).toBe("verify/effect/SignalActor")
   })
 
   it("joins a same-runtime run that is already active", async (runtime) => {
+    @actor("verify/effect/Counter#2")
     class Counter extends Actor<Counter, {}> {
       @state accessor value = 0
       @action async increment() { this.value += 1 }
