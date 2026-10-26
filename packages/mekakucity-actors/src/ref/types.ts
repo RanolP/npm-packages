@@ -79,6 +79,13 @@ export type ActorRef<T> = ActorRefValue & {
     : DeepReadonly<T[Key]>;
 };
 
+export type ActorSelfRef<T> = {
+  readonly [Key in keyof T as ActorRefAction<T, Key> extends never ? never : Key]:
+    ActorRefAction<T, Key> extends (...args: infer Args) => unknown
+      ? { runDetached(...args: Args): void }
+      : never;
+};
+
 export type ActorInput<T> = T extends Actor<unknown, infer Input> ? Input : never;
 
 export interface ActorRefInit<T> {

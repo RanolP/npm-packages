@@ -48,6 +48,26 @@ Reading a getter through an `ActorRef` evaluates the class getter with the refer
 
 Calling an actor API outside `runtime.run(...)` throws `NoActiveActorRuntimeError`. A nested `run` on the same runtime joins the open transaction; a nested `run` on another runtime opens an isolated transaction owned by that runtime.
 
+## Send a detached message to the same actor
+
+Use `this.asRef` inside an action to queue another action on the same actor.
+
+```ts
+class Counter extends Actor<Counter, { initial: number }> {
+  @state accessor value = this.input.initial;
+
+  @action async addLater(amount: number): Promise<void> {
+    this.asRef.add.runDetached(amount);
+  }
+
+  @action async add(amount: number): Promise<void> {
+    this.value += amount;
+  }
+}
+```
+
+The self-reference exposes only `runDetached(...)`. The runtime delivers the message after the sending action commits and discards it if that action rolls back. Awaited self-calls are not available because waiting for the current actor to call itself would cause reentrancy.
+
 ## External I/O
 
 Use detached actions as an outbox and model external work as a multi-transaction saga.

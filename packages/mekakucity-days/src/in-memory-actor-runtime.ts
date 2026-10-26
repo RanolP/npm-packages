@@ -1,6 +1,7 @@
 import {
   Actor,
   ActorRuntime,
+  ActorSelfRefUnavailableError,
   type ActorConstructor,
   type ActorDescriptor,
   type ActorInput,
@@ -11,10 +12,11 @@ import { invokeRefAction } from "./action/invoke.js";
 import { invokeLocal } from "./action/nested.js";
 import { dispatchDetached, enqueueDetached } from "./outbox/runtime.js";
 import { namedActor, spawnActor } from "./ref/creation.js";
-import { refreshActorValues } from "./ref/surface.js";
+import { refreshActorValues, typeName } from "./ref/surface.js";
 import { createRuntimeMemory } from "./runtime/memory.js";
 import { readSnapshotValue } from "./state/snapshot.js";
 import { inMemoryActorRuntimeTestHooks, type InMemoryActorRuntimeTestHooks } from "./testing.js";
+import { currentExecution } from "./transaction/context.js";
 import { runTransaction } from "./transaction/root.js";
 
 export class InMemoryActorRuntime extends ActorRuntime {
@@ -41,6 +43,13 @@ export class InMemoryActorRuntime extends ActorRuntime {
 
   refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
     return refreshActorValues(this.#memory, ref);
+  }
+
+  selfDescriptorOf(instance: object): ActorDescriptor {
+    const id = this.#memory.instanceIds.get(instance);
+    const context = currentExecution(this.#memory, "Read Actor.asRef");
+    if (!id || !context.frame || context.frame.record.id !== id) throw new ActorSelfRefUnavailableError();
+    return { type: typeName(this.#memory, instance.constructor), id };
   }
 
   invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
