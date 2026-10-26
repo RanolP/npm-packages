@@ -5,7 +5,7 @@
 "@mekakucity/verify": minor
 ---
 
-Add the `@actor(id)` class decorator and make it required on every actor class. The id is the stable actor type id and replaces the class name (`@mekakucity/days`) and the `defineActorHost` key (`@mekakucity/durable-object`). Two classes with the same id throw `ActorRuntimeError` when the second is defined; spawning, looking up or referencing an unregistered class or id throws `ActorRuntimeError` instead of building a reference without actions.
+Add the `@actor(id)` class decorator and make it required on every actor class. The id is the stable actor type id and replaces the class name (`@mekakucity/days`) and the `defineActorHost` key (`@mekakucity/durable-object`). The last class defined under an id wins and `console.warn` names the id and both classes, so Vite HMR and watch mode can re-evaluate a module; spawning, looking up or referencing an unregistered class or id throws `ActorRuntimeError` instead of building a reference without actions.
 
 `@state` and `@action` now record their members in decorator metadata when the class is defined, so `metadataFor(Type)` no longer needs an instance. This fixes Durable Object worker refs that had no action methods (`counter.add is not a function`) because the worker never constructs the actors it calls.
 

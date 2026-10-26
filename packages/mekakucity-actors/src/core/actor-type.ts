@@ -13,20 +13,24 @@ const labelOf = (Type: Function): string => Type.name || "(anonymous)";
 /**
  * Registers an actor class under `id`, its stable type id. Runtimes persist and route actors by this id, so
  * renaming the class is safe while changing the id orphans actors stored under the old one. Binding an id that
- * already belongs to another class throws when the class is defined.
+ * already belongs to another class rebinds it to the newer class and warns.
  */
 export const actor = (id: string) =>
   <Class extends AnyActorClass>(Type: Class, _context: ClassDecoratorContext<Class>): void => {
     if (typeof id !== "string" || id === "" || id.includes("\0")) {
       throw new ActorRuntimeError(`@actor id ${JSON.stringify(id)} on class ${labelOf(Type)} must be a non-empty string without NUL`);
     }
-    const bound = classesById.get(id);
-    if (bound !== undefined && bound !== Type) {
-      throw new ActorRuntimeError(`@actor id "${id}" on class ${labelOf(Type)} is already bound to class ${labelOf(bound)}`);
-    }
     const known = idsByClass.get(Type);
     if (known !== undefined && known !== id) {
       throw new ActorRuntimeError(`Actor class ${labelOf(Type)} is already registered as "${known}", not "${id}"`);
+    }
+    // Last definition wins: Vite HMR and watch mode re-evaluate a module, defining a new class under the same id.
+    // The replaced class keeps its id, so refs and instances still pointing at it resolve the same type.
+    const bound = classesById.get(id);
+    if (bound !== undefined && bound !== Type) {
+      console.warn(
+        `@actor id "${id}" was bound to class ${labelOf(bound)} and is now bound to class ${labelOf(Type)}; the later definition wins`,
+      );
     }
     classesById.set(id, Type);
     idsByClass.set(Type, id);

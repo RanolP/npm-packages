@@ -36,8 +36,8 @@ export const makeRef = <T extends Actor<unknown, unknown>>(
   type: string,
   id: string,
 ): ActorRef<T> => {
-  const ctor = memory.knownTypes.get(type) ?? actorClassOrThrow(type);
-  const ref = createActorRef<T>({ type, id }, actorRefSurfaceFor(ctor));
+  // The registry, not memory.knownTypes, so a class re-defined under the same id (HMR) gives the newer surface.
+  const ref = createActorRef<T>({ type, id }, actorRefSurfaceFor(actorClassOrThrow(type)));
   memory.refs.add(ref);
   memory.snapshotCache.track(ref, id);
   return ref;

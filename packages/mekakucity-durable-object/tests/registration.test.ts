@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { Actor, ActorRuntimeError, action, actor, type ActorRef } from "@mekakucity/actors";
-import { describe, expect, test } from "vitest";
+import { actorClassOf, actorTypeIdOf } from "@mekakucity/actors/runtime";
+import { describe, expect, test, vi } from "vitest";
 import { DurableObjectActorRuntime } from "../src/index.js";
 import { createHostRuntimeCore } from "../src/runtime.js";
 import { TallyActor } from "./registered-actors.js";
@@ -55,11 +56,32 @@ describe("@actor registration", () => {
       .rejects.toThrow(ActorRuntimeError);
   });
 
-  test("@actor rejects an id already bound to another class", () => {
-    expect(() => {
-      @actor("Tally")
-      class Other extends Actor<Other, {}> {}
-      return Other;
-    }).toThrow(/"Tally".*TallyActor/);
+  // HMR and watch mode re-evaluate a module, defining the class again under the same id; the newer one must win.
+  test("re-defining a class under the same id makes lookups by id return the new class", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      @actor("registration/Redefined")
+      class Old extends Actor<Old, {}> {
+        @action async before(): Promise<void> {}
+      }
+      expect(warn).not.toHaveBeenCalled();
+      @actor("registration/Redefined")
+      class New extends Actor<New, {}> {
+        @action async after(): Promise<void> {}
+      }
+      // The same class object registering again under its own id is a no-op, not an override.
+      actor("registration/Redefined")(New, {} as ClassDecoratorContext<typeof New>);
+      expect(warn).toHaveBeenCalledOnce();
+      expect(String(warn.mock.calls[0]?.[0])).toContain("registration/Redefined");
+      expect(actorClassOf("registration/Redefined")).toBe(New);
+      expect(actorTypeIdOf(Old)).toBe("registration/Redefined");
+      expect(actorTypeIdOf(New)).toBe("registration/Redefined");
+    } finally {
+      warn.mockRestore();
+    }
+    const core = createHostRuntimeCore(env.ACTOR_HOST, crypto.randomUUID());
+    const ref = core.makeRef<Actor<unknown, unknown>>("registration/Redefined", env.ACTOR_HOST.newUniqueId().toString()) as unknown as Record<string, unknown>;
+    expect(typeof ref.after).toBe("function");
+    expect(ref.before).toBeUndefined();
   });
 });

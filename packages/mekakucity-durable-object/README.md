@@ -80,4 +80,4 @@ class VisitCounter extends Actor<VisitCounter, { initial: number }> {
 }
 ```
 
-Two classes with the same id throw when the second one is defined.
+When two classes are defined under the same id, the later one wins and `console.warn` names the id and both classes.
