@@ -7,7 +7,7 @@ import { createRuntimeTestTools, type ActorRuntimeConformanceHooks } from "./run
 export const reentrancySuite = (factory: () => ActorRuntime, hooks?: ActorRuntimeConformanceHooks): void => {
   const { it } = createRuntimeTestTools(factory, hooks);
   describe("@mekakucity/actors reentrancy", () => {
-  it("rejects A to B to A reentrancy but allows another instance of the same class", async (runtime) => {
+  it("rejects A to B to A reentrancy but allows another instance of the same class and a direct self-call", async (runtime) => {
     class RingActor extends Actor<RingActor, { peer?: ActorRef<RingActor> }> {
       @state accessor peer = this.input.peer ?? null as ActorRef<RingActor> | null;
       @action async callPeer(): Promise<string> { return this.peer?.callPeer() ?? "done"; }
@@ -26,6 +26,9 @@ export const reentrancySuite = (factory: () => ActorRuntime, hooks?: ActorRuntim
       const first = await Actor.spawn(RingActor, {});
       const second = await Actor.spawn(RingActor, { peer: first });
       expect(await second.callLeaf()).toBe("leaf");
+      const self = await Actor.spawn(RingActor, {});
+      await self.setPeer(self);
+      expect(await self.callLeaf()).toBe("leaf");
     });
   });
   });

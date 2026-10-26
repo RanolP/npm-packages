@@ -28,6 +28,7 @@ import {
   isActorDescriptor,
   messageHolder,
   messageReleaseOps,
+  metadataFor,
   recordTxHold,
   txHolder,
   txReleaseOps,
