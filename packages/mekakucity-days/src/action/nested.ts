@@ -1,12 +1,12 @@
 import { NoActiveTransactionError } from "@mekakucity/actors";
 import { rollbackOutbox } from "../outbox/delivery.js";
-import { hold } from "../ref/lifecycle.js";
+import { discardFrameSpawns, drainHolderOps, holdForTx, settleFrameSpawns } from "../ref/lifecycle.js";
 import { collectRefs, hydrateRefs } from "../ref/surface.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import { rollbackAction } from "../state/commit.js";
 import { cloneActionResult } from "../state/snapshot.js";
 import { currentExecution, type ActionFrame } from "../transaction/context.js";
-import { discardFrameSpawns, makeFrame, mergeFrame } from "./frame.js";
+import { makeFrame, mergeFrame } from "./frame.js";
 
 export const invokeNested = async (
   memory: RuntimeMemory,
@@ -22,16 +22,17 @@ export const invokeNested = async (
       try {
         const value = cloneActionResult(memory, frame.record, actionName, await run());
         for (const id of collectRefs(memory, value)) {
-          frame.root.ownedIds.add(id);
-          await hold(frame.root, id, `tx:${frame.root.id}`);
+          holdForTx(frame, id);
         }
         mergeFrame(memory, frame);
+        settleFrameSpawns(frame);
+        await drainHolderOps(frame.root);
         return hydrateRefs(memory, value);
       } catch (error) {
         await rollbackAction(memory, frame);
-        await discardFrameSpawns(frame);
-        await Promise.all(frame.root.pendingHolds);
-        await rollbackOutbox(frame.root, frame.outbox);
+        discardFrameSpawns(frame);
+        rollbackOutbox(frame.root, frame.outbox);
+        await drainHolderOps(frame.root);
         throw error;
       }
     },

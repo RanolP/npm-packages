@@ -57,14 +57,104 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       await expect(sender.sendThenFail()).rejects.toThrow("rollback");
     });
     await turn();
-    await runtime.run(async () => { expect(receiver.count).toBe(0); });
+    await runtime.run(async () => { await Actor.refreshValues(receiver); expect(receiver.count).toBe(0); });
 
     await runtime.run(() => sender.send());
     await processed.promise;
-    await runtime.run(async () => { expect(receiver.count).toBe(1); });
+    await runtime.run(async () => { await Actor.refreshValues(receiver); expect(receiver.count).toBe(1); });
   });
 
-  it("kills an actor spawned by an action that later fails", async (runtime) => {
+  it("delivers a detached message when the root fails after the sending action committed", async (runtime) => {
+    const processed = deferred();
+    class Receiver extends Actor<Receiver, {}> {
+      @state accessor count = 0;
+      @action async hit() { this.count += 1; processed.resolve(); }
+    }
+    class Sender extends Actor<Sender, { receiver: ActorRef<Receiver> }> {
+      @state accessor receiver = this.input.receiver;
+      @action async send() { this.receiver.hit.runDetached(); }
+    }
+
+    let receiver!: ActorRef<Receiver>;
+    await runtime.run(async () => {
+      // Named, so the receiver outlives the failed root and the test can refresh its committed count.
+      receiver = await Actor.ofNamed(Receiver, "root-failure-receiver").orSpawn(() => ({}));
+      const sender = await Actor.spawn(Sender, { receiver });
+      await sender.send();
+      throw new Error("root failure");
+    }).catch((error: unknown) => expect((error as Error).message).toBe("root failure"));
+    await processed.promise;
+    await runtime.run(async () => { await Actor.refreshValues(receiver); expect(receiver.count).toBe(1); });
+  });
+
+  it("drops a detached message sent from the root context when the root fails", async (runtime) => {
+    class Receiver extends Actor<Receiver, {}> {
+      @state accessor count = 0;
+      @action async hit() { this.count += 1; }
+    }
+
+    let receiver!: ActorRef<Receiver>;
+    await runtime.run(async () => {
+      // Named, so the receiver outlives the failed root and the test can refresh its committed count.
+      receiver = await Actor.ofNamed(Receiver, "root-context-receiver").orSpawn(() => ({}));
+      receiver.hit.runDetached();
+      throw new Error("root failure");
+    }).catch((error: unknown) => expect((error as Error).message).toBe("root failure"));
+    await turn();
+    await runtime.run(async () => { await Actor.refreshValues(receiver); expect(receiver.count).toBe(0); });
+  });
+
+  it("a ref returned and dropped from state in the same action survives the root", async (runtime) => {
+    class Child extends Actor<Child, {}> {
+      @action async ping() { return "alive"; }
+    }
+    class Keeper extends Actor<Keeper, {}> {
+      @state accessor child: ActorRef<Child> | null = null;
+      @action async make() { this.child = await Actor.spawn(Child, {}); }
+      @action async take() { const c = this.child; this.child = null; return c; }
+    }
+
+    let keeper!: ActorRef<Keeper>;
+    await runtime.run(async () => {
+      keeper = await Actor.ofNamed(Keeper, "returned-and-dropped-keeper").orSpawn(() => ({}));
+      await keeper.make();
+    });
+    await runtime.run(async () => {
+      const taken = await keeper.take();
+      expect(await taken!.ping()).toBe("alive");
+    });
+  });
+
+  it("a detached message sent by a committed callee survives the caller action failing", async (runtime) => {
+    const processed = deferred();
+    class Receiver extends Actor<Receiver, {}> {
+      @state accessor count = 0;
+      @action async hit() { this.count += 1; processed.resolve(); }
+    }
+    class Callee extends Actor<Callee, { receiver: ActorRef<Receiver> }> {
+      @state accessor receiver = this.input.receiver;
+      @action async send() { this.receiver.hit.runDetached(); }
+    }
+    class Caller extends Actor<Caller, { callee: ActorRef<Callee> }> {
+      @state accessor callee = this.input.callee;
+      @action async go() { await this.callee.send(); throw new Error("caller failed"); }
+    }
+
+    let receiver!: ActorRef<Receiver>;
+    await runtime.run(async () => {
+      receiver = await Actor.ofNamed(Receiver, "committed-callee-receiver").orSpawn(() => ({}));
+      const callee = await Actor.spawn(Callee, { receiver });
+      const caller = await Actor.spawn(Caller, { callee });
+      await expect(caller.go()).rejects.toThrow("caller failed");
+    });
+    await processed.promise;
+    await runtime.run(async () => {
+      await Actor.refreshValues(receiver);
+      expect(receiver.count).toBe(1);
+    });
+  });
+
+  it("collects an actor spawned by an action that later fails", async (runtime) => {
     let child!: ActorRef<SpawnedChild>;
     class SpawnedChild extends Actor<SpawnedChild, {}> {
       @action async ping() { return "alive"; }
@@ -78,6 +168,37 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       await expect(spawner.spawnThenFail()).rejects.toThrow("abort");
       await expect(child.ping()).rejects.toBeInstanceOf(ActorKilledError);
     });
+  });
+
+  it("keeps an actor spawned by a failed action alive when another actor committed a ref to it", async (runtime) => {
+    let child!: ActorRef<KeptChild>;
+    class KeptChild extends Actor<KeptChild, {}> {
+      @action async ping() { return "alive"; }
+    }
+    class Keeper extends Actor<Keeper, {}> {
+      @state accessor child: ActorRef<KeptChild> | null = null;
+      @action async keep(ref: ActorRef<KeptChild>) { this.child = ref; }
+      @action async pingKept() { return this.child!.ping(); }
+      @action async drop() { this.child = null; }
+    }
+    class Outer extends Actor<Outer, { keeper: ActorRef<Keeper> }> {
+      @state accessor keeper = this.input.keeper;
+      @action async spawnHandOffThenFail() {
+        child = await Actor.spawn(KeptChild, {});
+        await this.keeper.keep(child);
+        throw new Error("abort after handoff");
+      }
+    }
+
+    let keeper!: ActorRef<Keeper>;
+    await runtime.run(async () => {
+      keeper = await Actor.ofNamed(Keeper, "failed-spawn-keeper").orSpawn(() => ({}));
+      const outer = await Actor.spawn(Outer, { keeper });
+      await expect(outer.spawnHandOffThenFail()).rejects.toThrow("abort after handoff");
+      expect(await keeper.pingKept()).toBe("alive");
+    });
+    await runtime.run(() => keeper.drop());
+    await expect(runtime.run(() => child.ping())).rejects.toBeInstanceOf(ActorKilledError);
   });
 
   it("collects unheld anonymous actors and retains refs stored in actor state", async (runtime) => {
@@ -129,6 +250,45 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     await messageFinished.promise;
     await turn();
     await expect(runtime.run(() => inFlightChild.ping())).rejects.toBeInstanceOf(ActorKilledError);
+  });
+
+  it("a ref handed off in a detached message survives the sender dropping it", async (runtime) => {
+    const started = deferred();
+    const release = deferred();
+    const finished = deferred();
+    class HandoffChild extends Actor<HandoffChild, {}> {
+      @action async ping() { return "alive"; }
+    }
+    class HandoffRecipient extends Actor<HandoffRecipient, {}> {
+      @action async receive(ref: ActorRef<HandoffChild>) {
+        started.resolve();
+        await release.promise;
+        await ref.ping();
+        finished.resolve();
+      }
+    }
+    class HandoffSender extends Actor<HandoffSender, { recipient: ActorRef<HandoffRecipient>; child: ActorRef<HandoffChild> }> {
+      @state accessor recipient = this.input.recipient;
+      @state accessor child: ActorRef<HandoffChild> | null = this.input.child;
+      @action async handOff() {
+        this.recipient.receive.runDetached(this.child!);
+        this.child = null;
+      }
+    }
+
+    let child!: ActorRef<HandoffChild>;
+    await runtime.run(async () => {
+      child = await Actor.spawn(HandoffChild, {});
+      const recipient = await Actor.spawn(HandoffRecipient, {});
+      const sender = await Actor.spawn(HandoffSender, { recipient, child });
+      await sender.handOff();
+    });
+    await started.promise;
+    await runtime.run(async () => { expect(await child.ping()).toBe("alive"); });
+    release.resolve();
+    await finished.promise;
+    await turn();
+    await expect(runtime.run(() => child.ping())).rejects.toBeInstanceOf(ActorKilledError);
   });
 
   it("kills an anonymous ref returned from the top-level transaction", async (runtime) => {

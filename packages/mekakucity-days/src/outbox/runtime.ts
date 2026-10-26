@@ -1,7 +1,7 @@
 import { ActorRuntimeError, type ActorDescriptor } from "@mekakucity/actors";
 import { cloneOrThrow } from "@mekakucity/actors/runtime";
 import { invokeActorAction } from "../action/invoke.js";
-import { hold, release } from "../ref/lifecycle.js";
+import { drainHolderOps, holdForMessage, releaseForMessage } from "../ref/lifecycle.js";
 import { collectRefs } from "../ref/surface.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import { currentExecution } from "../transaction/context.js";
@@ -24,20 +24,17 @@ export const enqueueDetached = (
     ),
   );
   const heldIds = new Set<string>([ref.id, ...collectRefs(memory, clonedArgs)]);
-  for (const heldId of heldIds) context.root.ownedIds.add(heldId);
   const message: OutboxMessage = {
     id,
     target: { type: ref.type, id: ref.id },
     action: actionName,
     args: clonedArgs,
     heldIds: [...heldIds],
+    ...(context.frame ? {} : { rootContext: true as const }),
   };
   if (context.frame) context.frame.outbox.push(message);
   else context.root.outbox.push(message);
-  context.root.pendingHolds.push(
-    Promise.all([...heldIds].map((heldId) => hold(context.root, heldId, `message:${id}`)))
-      .then(() => undefined),
-  );
+  holdForMessage(context.root, context.frame, message.heldIds, id);
 };
 
 export const dispatchDetached = async (memory: RuntimeMemory, message: OutboxMessage): Promise<void> => {
@@ -48,6 +45,7 @@ export const dispatchDetached = async (memory: RuntimeMemory, message: OutboxMes
   } catch (error) {
     await finishRoot(memory, root, false);
   } finally {
-    for (const id of message.heldIds) await release(root, id, `message:${message.id}`);
+    releaseForMessage(root, message.heldIds, message.id);
+    await drainHolderOps(root);
   }
 };

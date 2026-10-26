@@ -14,7 +14,7 @@ export interface RuntimeMemory {
   readonly refs: WeakSet<object>;
   readonly typeIds: WeakMap<Function, string>;
   readonly execution: AsyncLocalStorage<ExecutionContext>;
-  readonly sequence: { actor: number; transaction: number; message: number };
+  readonly sequence: { actor: number; frame: number; transaction: number; message: number };
   lastReplyForTest?: ActionReply;
 }
 
@@ -27,5 +27,5 @@ export const createRuntimeMemory = (): RuntimeMemory => ({
   refs: new WeakSet(),
   typeIds: new WeakMap(),
   execution: new AsyncLocalStorage<ExecutionContext>(),
-  sequence: { actor: 0, transaction: 0, message: 0 },
+  sequence: { actor: 0, frame: 0, transaction: 0, message: 0 },
 });

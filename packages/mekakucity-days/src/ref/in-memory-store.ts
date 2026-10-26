@@ -1,10 +1,10 @@
+import { actorHolder, applyHolderOp, type HolderOp } from "@mekakucity/actors/runtime";
 import type { OutboxMessage } from "../outbox/message.js";
 
 export interface ActorRecord {
   readonly id: string;
   readonly type: string;
   readonly instance: object;
-  readonly named: boolean;
   readonly mailbox: { tail: Promise<void> };
   readonly holders: Set<string>;
   readonly heldRefs: Set<string>;
@@ -49,6 +49,14 @@ export class InMemoryStore {
   async deliver(message: OutboxMessage): Promise<void> {
     if (!this.deliveryHandler) throw new Error("No outbox delivery handler is configured");
     await this.deliveryHandler(message);
+  }
+
+  /** Target-side half of the holder protocol: applies one op to this actor's own holders and, on collection, returns the releases for the refs it held. */
+  async applyHolderOp(op: HolderOp): Promise<HolderOp[]> {
+    const record = await this.route(op.target);
+    if (!record || !applyHolderOp(record.holders, op).collect) return [];
+    await this.kill(record.id);
+    return [...record.heldRefs].map((target) => ({ kind: "release", target, holder: actorHolder(record.id) }));
   }
 
   async kill(id: string): Promise<void> {

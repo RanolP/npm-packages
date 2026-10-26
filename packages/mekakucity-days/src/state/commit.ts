@@ -7,7 +7,7 @@ import {
   stateFields,
 } from "@mekakucity/actors/runtime";
 import { collectRefs, hydrateRefs } from "../ref/surface.js";
-import { killActor } from "../ref/lifecycle.js";
+import { commitHolderOps, drainHolderOps, dropPendingOps } from "../ref/lifecycle.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import type { ActionFrame, StateData } from "../transaction/context.js";
 import { cacheSnapshot } from "./snapshot.js";
@@ -25,25 +25,10 @@ export const updateStateHolders = async (
   preserveDroppedRefs = false,
 ): Promise<void> => {
   const currentIds = stateRefs(memory, frame, value);
-  const holder = `actor:${frame.record.id}`;
-  for (const id of currentIds) {
-    const target = await frame.root.backend.route(id);
-    if (!target || target.named) continue;
-    target.holders.add(holder);
-  }
-  for (const oldId of frame.record.heldRefs) {
-    if (currentIds.has(oldId)) continue;
-    const target = await frame.root.backend.route(oldId);
-    if (!target || target.named) continue;
-    if (preserveDroppedRefs) {
-      frame.root.ownedIds.add(oldId);
-      target.holders.add(`tx:${frame.root.id}`);
-    }
-    target.holders.delete(holder);
-    if (target.holders.size === 0) await killActor(frame.root, oldId);
-  }
+  commitHolderOps(frame, currentIds, preserveDroppedRefs);
   frame.record.heldRefs.clear();
   for (const id of currentIds) frame.record.heldRefs.add(id);
+  await drainHolderOps(frame.root);
 };
 
 export const commitSegment = async (
@@ -65,6 +50,7 @@ export const commitSegment = async (
 };
 
 export const rollbackAction = async (memory: RuntimeMemory, frame: ActionFrame): Promise<void> => {
+  dropPendingOps(frame);
   restoreState(frame.record, frame.initialState, (value) => hydrateRefs(memory, value));
   if (frame.record.version <= frame.startVersion) return;
   const restored = createSnapshot(frame.record);
