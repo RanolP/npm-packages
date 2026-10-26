@@ -141,7 +141,7 @@ export class ActorHost extends DurableObject<Env> {
         throw new ActorRuntimeError(`Actor ${this.#id} already exists`);
       }
       const core = createHostRuntimeCore(this.#binding(), request.scope);
-      const Type = lookupTypeOrThrow(request.scope, request.type);
+      const Type = lookupTypeOrThrow(request.type, request.scope);
       const meta: ActorMeta = { scope: request.scope, type: request.type, named: request.named, input: request.input };
       const actor: HostedActor = {
         id: this.#id,
@@ -282,7 +282,7 @@ export class ActorHost extends DurableObject<Env> {
       return undefined;
     }
     const core = createHostRuntimeCore(this.#binding(), meta.scope);
-    const Type = lookupTypeOrThrow(meta.scope, meta.type);
+    const Type = lookupTypeOrThrow(meta.type, meta.scope);
     const snapshot = this.#kv.get<StateData>(SNAPSHOT) ?? {};
     const actor: HostedActor = {
       id: this.#id,
