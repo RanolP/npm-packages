@@ -32,6 +32,8 @@ test("actor refs expose asynchronous actions and read-only cloneable state", () 
   ref.input;
   // @ts-expect-error protected subclass members do not appear on refs.
   ref.secret;
+  // @ts-expect-error the protected self reference does not appear on refs.
+  ref.asRef;
   // @ts-expect-error actor actions are asynchronous through refs.
   const synchronousResult: number = ref.increment(1);
   expectTypeOf(synchronousResult).toEqualTypeOf<number>();

@@ -303,6 +303,7 @@ export class ActorHost extends DurableObject<Env> {
     this.#actor = actor;
     actor.core.local = {
       id: actor.id,
+      type: actor.meta.type,
       instance: actor.instance,
       commitSegment: (frame, preserve) => this.#commit(actor, frame, { force: false, preserve }),
       invokeNested: (parent, actionName, run) => this.#runNested(actor, parent, actionName, run),

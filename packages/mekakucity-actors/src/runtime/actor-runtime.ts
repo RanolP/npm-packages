@@ -27,6 +27,7 @@ export abstract class ActorRuntime {
   abstract spawn<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, input: ActorInput<T>): Promise<ActorRef<T>>;
   abstract named<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T>;
   abstract refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>>;
+  abstract selfDescriptorOf(instance: object): ActorDescriptor;
   abstract invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown>;
   abstract invokeLocalAction(instance: object, actionName: string, args: unknown[], run: () => unknown): unknown;
   abstract runDetached(ref: ActorDescriptor, actionName: string, args: unknown[]): void;

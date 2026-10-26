@@ -5,6 +5,7 @@ import {
   ActorResultSerializationError,
   ActorRuntime,
   ActorRuntimeError,
+  ActorSelfRefUnavailableError,
   ActorSnapshotUnavailableError,
   NoActiveTransactionError,
   type Actor,
@@ -78,6 +79,7 @@ interface Execution {
 /** What a runtime living inside an ActorHost needs from that host. */
 export interface LocalActor {
   readonly id: string;
+  readonly type: string;
   readonly instance: object;
   commitSegment(frame: ActionFrame, preserveDroppedRefs: boolean): Promise<void>;
   invokeNested(parent: ActionFrame, actionName: string, run: () => unknown): Promise<unknown>;
@@ -288,6 +290,11 @@ export class RuntimeCore {
     return normalized;
   }
 
+  selfDescriptorOf(instance: object): ActorDescriptor {
+    if (!this.local || this.local.instance !== instance) throw new ActorSelfRefUnavailableError();
+    return { type: this.local.type, id: this.local.id };
+  }
+
   async invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
     const context = this.current(`Call actor action ${actionName}`);
     const { frame } = context;
@@ -392,6 +399,10 @@ export class DurableObjectActorRuntime extends ActorRuntime {
 
   refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
     return this.#core.refreshValues(ref);
+  }
+
+  selfDescriptorOf(instance: object): ActorDescriptor {
+    return this.#core.selfDescriptorOf(instance);
   }
 
   invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
