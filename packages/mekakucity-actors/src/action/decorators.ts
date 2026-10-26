@@ -1,11 +1,10 @@
 import { ActorRuntime } from "../runtime/actor-runtime.js";
 import type { Cloneable, StructuredCloneable } from "../ref/types.js";
 
-export type MemberKind = "state" | "derived" | "action";
+export type MemberKind = "state" | "action";
 
 export interface ActorMetadata {
   readonly state: Set<string>;
-  readonly derived: Set<string>;
   readonly actions: Map<string, (...args: unknown[]) => unknown>;
 }
 
@@ -15,7 +14,7 @@ const actionNames = new WeakMap<Function, string>();
 const metadataForConstructor = (ctor: Function): ActorMetadata => {
   const current = ownMetadata.get(ctor);
   if (current) return current;
-  const created: ActorMetadata = { state: new Set(), derived: new Set(), actions: new Map() };
+  const created: ActorMetadata = { state: new Set(), actions: new Map() };
   ownMetadata.set(ctor, created);
   return created;
 };
@@ -24,7 +23,7 @@ export const metadataFor = (instanceOrConstructor: object | Function): ActorMeta
   const ctor = typeof instanceOrConstructor === "function"
     ? instanceOrConstructor
     : instanceOrConstructor.constructor;
-  const result: ActorMetadata = { state: new Set(), derived: new Set(), actions: new Map() };
+  const result: ActorMetadata = { state: new Set(), actions: new Map() };
   const chain: Function[] = [];
   for (let current: Function | null = ctor; current && current !== Function.prototype; current = Object.getPrototypeOf(current)) {
     chain.unshift(current);
@@ -33,7 +32,6 @@ export const metadataFor = (instanceOrConstructor: object | Function): ActorMeta
     const own = ownMetadata.get(current);
     if (!own) continue;
     for (const key of own.state) result.state.add(key);
-    for (const key of own.derived) result.derived.add(key);
     for (const [key, method] of own.actions) result.actions.set(key, method);
   }
   return result;
@@ -42,7 +40,6 @@ export const metadataFor = (instanceOrConstructor: object | Function): ActorMeta
 const register = (kind: MemberKind, name: string, ctor: Function, method?: (...args: unknown[]) => unknown): void => {
   const metadata = metadataForConstructor(ctor);
   if (kind === "state") metadata.state.add(name);
-  else if (kind === "derived") metadata.derived.add(name);
   else if (method) metadata.actions.set(name, method);
 };
 
@@ -54,15 +51,6 @@ export const state = <This extends object, Value>(
     register("state", String(context.name), this.constructor);
   });
   return {};
-};
-
-export const derived = <This extends object, Value>(
-  _value: (this: This) => Value,
-  context: ClassGetterDecoratorContext<This, Value>,
-): void => {
-  context.addInitializer(function (this: This) {
-    register("derived", String(context.name), this.constructor);
-  });
 };
 
 // ActorRef calls an action with the ref, not the actor, as `this`, so an explicit `this` parameter is rejected here.

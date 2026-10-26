@@ -6,10 +6,10 @@ import {
 } from "@mekakucity/actors";
 import {
   collectActorRefIds,
+  actorRefSurfaceFor,
   createActorRef,
   hydrateActorRefs,
   isActorDescriptor,
-  metadataFor,
 } from "@mekakucity/actors/runtime";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import { commitSegment } from "../state/commit.js";
@@ -41,13 +41,9 @@ export const makeRef = <T extends Actor<unknown, unknown>>(
   id: string,
 ): ActorRef<T> => {
   const ctor = memory.knownTypes.get(type);
-  const metadata = ctor ? metadataFor(ctor) : undefined;
   const ref = createActorRef<T>(
     { type, id },
-    {
-      values: metadata ? [...metadata.state, ...metadata.derived] : [],
-      actions: metadata?.actions.keys() ?? [],
-    },
+    ctor ? actorRefSurfaceFor(ctor) : { values: [], actions: [], getters: [] },
   );
   memory.refs.add(ref);
   memory.snapshotCache.track(ref, id);

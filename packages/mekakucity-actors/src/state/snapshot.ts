@@ -39,11 +39,7 @@ export const restoreState = (
 
 export const createSnapshot = (record: ActorStateRecord): ActorSnapshot => {
   const state = cloneState(record);
-  const full: StateData = { ...state };
-  for (const key of metadataFor(record.instance).derived) {
-    full[key] = (record.instance as Record<string, unknown>)[key];
-  }
-  const data = cloneOrThrow(full, (cause) => new ActorStateSerializationError(record.id, cause));
+  const data = cloneOrThrow(state, (cause) => new ActorStateSerializationError(record.id, cause));
   return { state, data };
 };
 
@@ -56,7 +52,6 @@ export const changedStateFields = (
   for (const key of stateFields(record)) {
     if (!isDeepStrictEqual(before[key], after[key])) diff[key] = after[key];
   }
-  for (const key of metadataFor(record.instance).derived) diff[key] = record.snapshot[key];
   return diff;
 };
 

@@ -1,19 +1,19 @@
-import { Actor, action, derived, state } from "@mekakucity/actors";
+import { Actor, action, state } from "@mekakucity/actors";
 import { describe, expect, it } from "vitest";
 import { InMemoryActorRuntime } from "../src/index.js";
 import { inMemoryActorRuntimeTestHooks } from "../src/testing.js";
 
 describe("@mekakucity/days diff replies", () => {
-  it("updates state and derived values from a field-level action reply (NimGame)", async () => {
+  it("updates state and getter values from a field-level action reply (NimGame)", async () => {
     class NimGame extends Actor<NimGame, { players: string[] }> {
       @state accessor players: string[] = this.input.players;
       @state accessor turn: 0 | 1 = 0;
       @state accessor stonesLeft = 11;
       @state accessor started = false;
-      @derived get currentPlayer() { return this.players[this.turn] ?? null; }
-      @derived get isOver() { return this.started && this.stonesLeft === 0; }
-      @derived get winner() { return this.isOver ? this.players[this.turn === 0 ? 1 : 0] : null; }
-      @derived get loser() { return this.isOver ? this.players[this.turn] : null; }
+      get currentPlayer() { return this.players[this.turn] ?? null; }
+      get isOver() { return this.started && this.stonesLeft === 0; }
+      get winner() { return this.isOver ? this.players[this.turn === 0 ? 1 : 0] : null; }
+      get loser() { return this.isOver ? this.players[this.turn] : null; }
       @action async enter(player: string) {
         if (this.started) throw new Error("game already started");
         if (this.players.length >= 2) throw new Error("game full");
@@ -47,7 +47,7 @@ describe("@mekakucity/days diff replies", () => {
       const diffReply = runtime[inMemoryActorRuntimeTestHooks]().lastActionReply()!;
       expect(diffReply.isDiff).toBe(true);
       expect(diffReply.baseVersion).toBe(diffReply.startVersion);
-      expect(Object.keys(diffReply.snapshot).sort()).toEqual(["currentPlayer", "isOver", "loser", "started", "stonesLeft", "turn", "winner"].sort());
+      expect(Object.keys(diffReply.snapshot).sort()).toEqual(["started", "stonesLeft", "turn"].sort());
       expect(game.stonesLeft).toBe(8);
       expect(game.currentPlayer).toBe("bob");
       await expect(game.enter("charlie")).rejects.toThrow("game already started");
@@ -55,7 +55,7 @@ describe("@mekakucity/days diff replies", () => {
       expect(await game.take("bob", 1)).toBe(7);
       const fullReply = runtime[inMemoryActorRuntimeTestHooks]().lastActionReply()!;
       expect(fullReply.isDiff).toBe(false);
-      expect(Object.keys(fullReply.snapshot).sort()).toEqual(["currentPlayer", "isOver", "loser", "players", "started", "stonesLeft", "turn", "winner"].sort());
+      expect(Object.keys(fullReply.snapshot).sort()).toEqual(["players", "started", "stonesLeft", "turn"].sort());
       await game.take("alice", 3);
       await game.take("bob", 3);
       await game.take("alice", 1);

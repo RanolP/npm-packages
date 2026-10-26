@@ -1,6 +1,6 @@
 export { actionNameOf, metadataFor } from "../action/decorators.js";
 export type { ActorMetadata } from "../action/decorators.js";
-export { createActorRef } from "../ref/surface.js";
+export { actorRefSurfaceFor, createActorRef } from "../ref/surface.js";
 export type { ActorRefSurface } from "../ref/surface.js";
 export { collectActorRefIds, hydrateActorRefs, isActorDescriptor } from "../ref/walk.js";
 export type { ActorRefHydration } from "../ref/walk.js";
