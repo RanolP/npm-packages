@@ -5,13 +5,17 @@ import { ActorEffect, type ActorEffectError } from "../src/effect/index.js";
 import type { ActorRef, Cloneable } from "../src/index.js";
 
 class ExplicitThisActor extends Actor<ExplicitThisActor, {}> {
+  // @ts-expect-error an explicit `this` would make the action uncallable on ActorRef, so @action rejects it.
   @action async selfy(this: ExplicitThisActor): Promise<number> { return 42; }
+  // @ts-expect-error the rejection also covers void-returning actions, which resolve through the second decorator overload.
+  @action async touch(this: ExplicitThisActor): Promise<void> {}
 }
 
-class ExplicitThisOverloadedActor extends Actor<ExplicitThisOverloadedActor, {}> {
-  echo(this: ExplicitThisOverloadedActor, value: number): Promise<number>;
-  echo(this: ExplicitThisOverloadedActor, value: string): Promise<string>;
-  @action async echo(this: ExplicitThisOverloadedActor, value: number | string): Promise<number | string> { return value; }
+class ExplicitThisImplementationActor extends Actor<ExplicitThisImplementationActor, {}> {
+  echo(value: number): Promise<number>;
+  echo(value: string): Promise<string>;
+  // @ts-expect-error an explicit `this` on the implementation of an overloaded action is rejected too.
+  @action async echo(this: ExplicitThisImplementationActor, value: number | string): Promise<number | string> { return value; }
 }
 
 class GenericMethodActor extends Actor<GenericMethodActor, {}> {
@@ -24,18 +28,10 @@ class OverloadedMethodActor extends Actor<OverloadedMethodActor, {}> {
   @action async echo(value: number | string): Promise<number | string> { return value; }
 }
 
-test("explicit-this, overloads, and generic actions retain their supported call signatures", () => {
-  const explicitThisRef = null as unknown as ActorRef<ExplicitThisActor>;
-  expectTypeOf(explicitThisRef.selfy()).toEqualTypeOf<Promise<number>>();
-  expectTypeOf(ActorEffect.call(explicitThisRef, "selfy")).toEqualTypeOf<Effect.Effect<number, ActorEffectError>>();
-
-  const explicitThisOverloadedRef = null as unknown as ActorRef<ExplicitThisOverloadedActor>;
-  // @ts-expect-error explicit-this overloads keep only the last signature.
-  explicitThisOverloadedRef.echo(1);
-  expectTypeOf(explicitThisOverloadedRef.echo("a")).toEqualTypeOf<Promise<string>>();
-
+test("overloaded and generic actions keep their call signatures on refs", () => {
   const genericMethodRef = null as unknown as ActorRef<GenericMethodActor>;
-  assertType<Promise<number>>(genericMethodRef.echo(5));
+  // A ref type that rebuilds the action signature from its parameters and result erases T and widens this to Promise<Cloneable>.
+  expectTypeOf(genericMethodRef.echo(5)).toEqualTypeOf<Promise<5>>();
   assertType<Promise<string>>(genericMethodRef.echo("a"));
   // @ts-expect-error generic echo arguments still have to be cloneable.
   genericMethodRef.echo(() => 1);
@@ -45,6 +41,7 @@ test("explicit-this, overloads, and generic actions retain their supported call 
   ActorEffect.call(genericMethodRef, "echo", () => 1);
 
   const overloadedMethodRef = null as unknown as ActorRef<OverloadedMethodActor>;
+  // A ref type that rebuilds the action signature keeps only the last (string) overload.
   expectTypeOf(overloadedMethodRef.echo(5)).toEqualTypeOf<Promise<number>>();
   expectTypeOf(overloadedMethodRef.echo("a")).toEqualTypeOf<Promise<string>>();
   // @ts-expect-error neither overload accepts a boolean.

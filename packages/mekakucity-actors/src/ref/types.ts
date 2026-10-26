@@ -69,7 +69,7 @@ export type ActorRefAction<T, Key extends keyof T> = T[Key] extends (...args: in
   ? IsAny<Awaited<Result>> extends true
     ? never
     : IsActionResultCloneable<Awaited<Result>> extends true
-      ? OmitThisParameter<T[Key]> & { runDetached(...args: Args): void }
+      ? T[Key] & { runDetached(...args: Args): void }
       : never
   : never;
 

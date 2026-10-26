@@ -42,7 +42,7 @@ await runtime.run(async () => {
 });
 ```
 
-`Actor.spawn` returns an `ActorRef`, not the actor instance. The reference exposes decorated asynchronous actions and read-only state snapshots.
+`Actor.spawn` returns an `ActorRef`, not the actor instance. The reference exposes decorated asynchronous actions and read-only state snapshots. An action must not declare an explicit `this` parameter; `@action` rejects it at compile time.
 
 Calling an actor API outside `runtime.run(...)` throws `NoActiveActorRuntimeError`. A nested `run` on the same runtime joins the open transaction; a nested `run` on another runtime opens an isolated transaction owned by that runtime.
 
@@ -146,5 +146,4 @@ The verification package requires `vitest`; its Effect suite also requires `effe
 ## Known limitations
 
 - `ActorEffect.call` widens a generic action method's parameter and result types to the generic bound.
-- An action that declares an explicit `this` parameter keeps only its last overload and loses its generic type parameters on `ActorRef`.
 - An asynchronous method without `@action` is indistinguishable from an action at the type level, so it appears on `ActorRef` even though the runtime has not registered it as an action.
