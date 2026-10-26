@@ -11,7 +11,7 @@ import {
   restoreSnapshotData,
 } from "@mekakucity/actors/runtime";
 import { rollbackOutbox } from "../outbox/delivery.js";
-import { hold } from "../ref/lifecycle.js";
+import { discardFrameSpawns, drainHolderOps, holdForTx, settleFrameSpawns } from "../ref/lifecycle.js";
 import { collectRefs, hydrateRefs } from "../ref/surface.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import { commitSegment, rollbackAction } from "../state/commit.js";
@@ -22,7 +22,7 @@ import {
   snapshotVersion,
 } from "../state/snapshot.js";
 import { currentExecution, type ActionFrame, type RootTransaction } from "../transaction/context.js";
-import { discardFrameSpawns, makeFrame, mergeFrame } from "./frame.js";
+import { makeFrame, mergeFrame } from "./frame.js";
 import { invokeNested } from "./nested.js";
 import type { ActionReply } from "./reply.js";
 import { withMailbox } from "./mailbox.js";
@@ -75,12 +75,14 @@ export const invokeActorAction = async (
       try {
         const callArgs = hydrateRefs(memory, structuredClone(args));
         const value = cloneActionResult(memory, record, actionName, await method.apply(record.instance, callArgs));
+        // Queued before commitSegment so hold(tx) lands before a same-action release(actor) of the returned ref.
+        for (const id of collectRefs(memory, value)) {
+          holdForTx(frame, id);
+        }
         await commitSegment(memory, frame, true);
         mergeFrame(memory, frame);
-        for (const id of collectRefs(memory, value)) {
-          root.ownedIds.add(id);
-          await hold(root, id, `tx:${root.id}`);
-        }
+        settleFrameSpawns(frame);
+        await drainHolderOps(root);
         const snapshot = frame.startVersion === baseVersion
           ? changedStateFields(frame.initialState, restoreSnapshotData(record), record)
           : structuredClone(record.snapshot);
@@ -94,9 +96,9 @@ export const invokeActorAction = async (
         };
       } catch (error) {
         await rollbackAction(memory, frame);
-        await discardFrameSpawns(frame);
-        await Promise.all(root.pendingHolds);
-        await rollbackOutbox(root, frame.outbox);
+        discardFrameSpawns(frame);
+        rollbackOutbox(root, frame.outbox);
+        await drainHolderOps(root);
         throw error;
       }
     });

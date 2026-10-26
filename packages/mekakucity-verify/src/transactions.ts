@@ -165,9 +165,11 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
       const ref = await Actor.spawn(WaitingActor, { gate });
       const first = ref.waitAcrossActor();
       await entered.promise;
+      await Actor.refreshValues(ref);
       expect(ref.value).toBe(1);
       const second = ref.increment();
       await turn();
+      await Actor.refreshValues(ref);
       expect(ref.value).toBe(1);
       release.resolve();
       await Promise.all([first, second]);

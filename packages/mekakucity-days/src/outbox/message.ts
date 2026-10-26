@@ -6,4 +6,6 @@ export interface OutboxMessage {
   readonly action: string;
   readonly args: readonly unknown[];
   readonly heldIds: readonly string[];
+  /** Sent from root context: durable only if the root itself succeeds. */
+  readonly rootContext?: true;
 }

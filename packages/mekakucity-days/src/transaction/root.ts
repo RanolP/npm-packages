@@ -1,22 +1,14 @@
 import { flushOutbox, rollbackOutbox } from "../outbox/delivery.js";
-import { release } from "../ref/lifecycle.js";
+import { drainHolderOps, releaseOwnedRefs } from "../ref/lifecycle.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import type { RootTransaction } from "./context.js";
-
-const releaseOwnedRefs = async (root: RootTransaction): Promise<void> => {
-  for (const id of root.ownedIds) {
-    const record = await root.backend.route(id);
-    if (!record || record.named) continue;
-    await release(root, id, `tx:${root.id}`);
-  }
-};
 
 export const newRoot = (memory: RuntimeMemory): RootTransaction => ({
   id: `transaction_${++memory.sequence.transaction}`,
   backend: memory.backend,
   outbox: [],
-  pendingHolds: [],
-  ownedIds: new Set(),
+  holderQueue: [],
+  owned: new Map(),
 });
 
 export const finishRoot = async (
@@ -26,13 +18,18 @@ export const finishRoot = async (
 ): Promise<void> => {
   if (succeeded) {
     await flushOutbox(root);
-    await releaseOwnedRefs(root);
+    releaseOwnedRefs(root);
+    await drainHolderOps(root);
     return;
   }
 
-  await Promise.all(root.pendingHolds);
-  await rollbackOutbox(root, root.outbox.splice(0));
-  await releaseOwnedRefs(root);
+  // Messages from committed top-frame segments survive root failure; root-context sends die with the root.
+  const all = root.outbox.splice(0);
+  rollbackOutbox(root, all.filter((m) => m.rootContext));
+  root.outbox.push(...all.filter((m) => !m.rootContext));
+  await flushOutbox(root);
+  releaseOwnedRefs(root);
+  await drainHolderOps(root);
 };
 
 export const runTransaction = async <Result>(

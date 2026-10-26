@@ -18,3 +18,18 @@ export type { ActorSnapshot, ActorStateRecord, StateData } from "../state/snapsh
 export { ActorRuntime } from "./actor-runtime.js";
 export type { ActorConstructor, ActorDescriptor } from "./actor-runtime.js";
 export { ActorRuntimeError, NoActiveActorRuntimeError, NoActiveTransactionError } from "./errors.js";
+export {
+  NAMED_ROOT,
+  actorHolder,
+  applyHolderOp,
+  diffHeldRefs,
+  discardSpawnOps,
+  frameHolder,
+  messageHolder,
+  messageReleaseOps,
+  recordTxHold,
+  settleSpawnOps,
+  txHolder,
+  txReleaseOps,
+} from "../ref/holders.js";
+export type { HolderOp, TxHold } from "../ref/holders.js";
