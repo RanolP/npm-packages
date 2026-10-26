@@ -4,13 +4,18 @@ import { Actor, ActorKilledError, action, state, type ActorRef } from "@mekakuci
 import { actorHolder, messageHolder, NAMED_ROOT, type HolderOp } from "@mekakucity/actors/runtime";
 import { describe, expect, test } from "vitest";
 import { DurableObjectActorRuntime } from "../src/index.js";
+import { allowUnregisteredTypes } from "../src/testing.js";
 import { Outbox } from "../src/outbox.js";
 
 class Probe extends Actor<Probe, {}> {
   @action async ping(): Promise<string> { return "alive"; }
 }
 
-const newRuntime = () => new DurableObjectActorRuntime(env.ACTOR_HOST, { scope: crypto.randomUUID() });
+const newRuntime = () => {
+  const scope = crypto.randomUUID();
+  allowUnregisteredTypes(scope);
+  return new DurableObjectActorRuntime(env.ACTOR_HOST, { scope });
+};
 const stubOf = (ref: { id: string }) => env.ACTOR_HOST.get(env.ACTOR_HOST.idFromString(ref.id));
 const storedKeys = (ref: { id: string }) =>
   runInDurableObject(stubOf(ref), (_instance, state) => [...state.storage.kv.list()].map(([key]) => key));
