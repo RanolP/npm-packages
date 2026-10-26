@@ -38,7 +38,7 @@
     "effect": "^4.0.5",
     "tsdown": "^0.12.7",
     "typescript": "catalog:",
-    "vitest": "^3.2.3"
+    "vitest": "^4.1.0"
   },
   "files": [
     "src/",

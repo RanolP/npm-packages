@@ -31,7 +31,7 @@
   "peerDependencies": {
     "@mekakucity/actors": ">=0.0.0 <1",
     "effect": "^4.0.0",
-    "vitest": "^3.2.3"
+    "vitest": "^4.1.0"
   },
   "peerDependenciesMeta": {
     "effect": {
@@ -43,7 +43,7 @@
     "@types/node": "^24.0.1",
     "effect": "^4.0.5",
     "typescript": "catalog:",
-    "vitest": "^3.2.3"
+    "vitest": "^4.1.0"
   },
   "files": [
     "src/",
