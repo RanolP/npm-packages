@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { assertType, expectTypeOf, test } from "vitest";
-import { Actor, action, state } from "../src/index.js";
+import { Actor, actor, action, state } from "../src/index.js";
 import { ActorEffect, type ActorEffectError } from "../src/effect/index.js";
 import type { Cloneable } from "../src/index.js";
 
@@ -9,6 +9,7 @@ class Money {
   format() { return `$${this.amount}`; }
 }
 
+@actor("generic-queues/Queue")
 class Queue<T extends Cloneable> extends Actor<Queue<T>, { items: T[] }> {
   @state accessor items: T[] = this.input.items;
   @action async push(item: T) { this.items = [...this.items, item]; }

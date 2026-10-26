@@ -15,9 +15,10 @@ pnpm add @mekakucity/actors @mekakucity/days
 Create a runtime and wrap the complete actor call chain with `runtime.run(...)`.
 
 ```ts
-import { Actor, action, state } from "@mekakucity/actors";
+import { Actor, action, actor, state } from "@mekakucity/actors";
 import { InMemoryActorRuntime } from "@mekakucity/days";
 
+@actor("counter")
 class Counter extends Actor<Counter, { initial: number }> {
   @state accessor value = this.input.initial;
 

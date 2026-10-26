@@ -1,10 +1,11 @@
-import { Actor, action, state } from "@mekakucity/actors";
+import { Actor, actor, action, state } from "@mekakucity/actors";
 import { describe, expect, it } from "vitest";
 import { InMemoryActorRuntime } from "../src/index.js";
 import { inMemoryActorRuntimeTestHooks } from "../src/testing.js";
 
 describe("@mekakucity/days diff replies", () => {
   it("updates state and getter values from a field-level action reply (NimGame)", async () => {
+    @actor("days-diff-reply/NimGame")
     class NimGame extends Actor<NimGame, { players: string[] }> {
       @state accessor players: string[] = this.input.players;
       @state accessor turn: 0 | 1 = 0;

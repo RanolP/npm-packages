@@ -1,21 +1,36 @@
 import { ActorRuntime } from "../runtime/actor-runtime.js";
+import { ActorRuntimeError } from "../runtime/errors.js";
 import type { Cloneable, StructuredCloneable } from "../ref/types.js";
-
-export type MemberKind = "state" | "action";
 
 export interface ActorMetadata {
   readonly state: Set<string>;
   readonly actions: Map<string, (...args: unknown[]) => unknown>;
 }
 
-const ownMetadata = new WeakMap<Function, ActorMetadata>();
+// TypeScript's decorator emit passes `context.metadata` only when `Symbol.metadata` exists, and neither Node 24
+// nor workerd defines it yet. esbuild and Babel fall back to `Symbol.for("Symbol.metadata")`, so installing that
+// same symbol makes every compiler hand the decorators one shared metadata object per class. Decorated classes
+// import this module first, so it runs before any of them is defined.
+(Symbol as { metadata?: symbol }).metadata ??= Symbol.for("Symbol.metadata");
+
+// Keyed by the class's own metadata object, which member decorators receive at class definition time, so a
+// class's members are known before (and without) constructing it: a ref built in an isolate that never hosts
+// the actor still gets every action.
+const ownMetadata = new WeakMap<object, ActorMetadata>();
 const actionNames = new WeakMap<Function, string>();
 
-const metadataForConstructor = (ctor: Function): ActorMetadata => {
-  const current = ownMetadata.get(ctor);
+const metadataObjectOf = (context: { readonly name: string | symbol; readonly metadata?: object }): object => {
+  if (context.metadata) return context.metadata;
+  throw new ActorRuntimeError(
+    `Decorator on ${String(context.name)} received no context.metadata; compile actor classes with a TC39 decorator transform that supports decorator metadata (TypeScript 5.2+, esbuild, Babel)`,
+  );
+};
+
+const metadataForObject = (metadata: object): ActorMetadata => {
+  const current = ownMetadata.get(metadata);
   if (current) return current;
   const created: ActorMetadata = { state: new Set(), actions: new Map() };
-  ownMetadata.set(ctor, created);
+  ownMetadata.set(metadata, created);
   return created;
 };
 
@@ -29,7 +44,9 @@ export const metadataFor = (instanceOrConstructor: object | Function): ActorMeta
     chain.unshift(current);
   }
   for (const current of chain) {
-    const own = ownMetadata.get(current);
+    // A subclass without decorators of its own inherits Symbol.metadata, so only an own property counts.
+    const metadata = Object.getOwnPropertyDescriptor(current, Symbol.metadata)?.value;
+    const own = metadata ? ownMetadata.get(metadata) : undefined;
     if (!own) continue;
     for (const key of own.state) result.state.add(key);
     for (const [key, method] of own.actions) result.actions.set(key, method);
@@ -37,19 +54,11 @@ export const metadataFor = (instanceOrConstructor: object | Function): ActorMeta
   return result;
 };
 
-const register = (kind: MemberKind, name: string, ctor: Function, method?: (...args: unknown[]) => unknown): void => {
-  const metadata = metadataForConstructor(ctor);
-  if (kind === "state") metadata.state.add(name);
-  else if (method) metadata.actions.set(name, method);
-};
-
 export const state = <This extends object, Value>(
   _value: ClassAccessorDecoratorTarget<This, Value>,
   context: ClassAccessorDecoratorContext<This, Value>,
 ): ClassAccessorDecoratorResult<This, Value> => {
-  context.addInitializer(function (this: This) {
-    register("state", String(context.name), this.constructor);
-  });
+  metadataForObject(metadataObjectOf(context)).state.add(String(context.name));
   return {};
 };
 
@@ -93,9 +102,7 @@ export const action: ActionDecorator = <This extends object, Args extends unknow
     ) as Result;
   };
   actionNames.set(wrapped, name);
-  context.addInitializer(function (this: This) {
-    register("action", name, this.constructor, value as (...args: unknown[]) => unknown);
-  });
+  metadataForObject(metadataObjectOf(context)).actions.set(name, value as (...args: unknown[]) => unknown);
   return wrapped;
 };
 

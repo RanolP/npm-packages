@@ -21,9 +21,10 @@ pnpm add effect
 Create one runtime and open its transaction context with `runtime.run(...)`. The call establishes the AsyncLocalStorage scope and commits actor actions in segments. A failed run discards only its uncommitted work; segments committed before the failure stay, so the caller can retry from that state.
 
 ```ts
-import { Actor, action, state } from "@mekakucity/actors";
+import { Actor, action, actor, state } from "@mekakucity/actors";
 import { InMemoryActorRuntime } from "@mekakucity/days";
 
+@actor("counter")
 class Counter extends Actor<Counter, { initial: number }> {
   @state accessor value = this.input.initial;
 
@@ -42,6 +43,10 @@ await runtime.run(async () => {
 });
 ```
 
+Every actor class needs `@actor(id)`. The id is the actor's stable type id: runtimes store and route actors by it, so renaming the class or minifying the bundle is safe, while changing the id orphans actors already stored under the old one. `@actor` registers the class when its module is evaluated, together with its `@state` fields and `@action` methods, so a process that only calls an actor can build a full reference without ever constructing the actor. When a second class is defined under an id that is already bound, the later definition wins and `console.warn` names the id and both classes; this keeps Vite HMR and watch mode working, but two distinct actors that accidentally share an id silently route to the later one. Spawning or looking up a class without `@actor` throws `ActorRuntimeError` naming the class.
+
+The decorators read class members through decorator metadata (`context.metadata`). Node 24 and workerd do not define `Symbol.metadata` yet, so the package sets it to `Symbol.for("Symbol.metadata")` when it is missing; that is the same symbol esbuild and Babel fall back to, and it makes TypeScript's own emit pass metadata too.
+
 `Actor.spawn` returns an `ActorRef`, not the actor instance. The reference exposes decorated asynchronous actions, read-only `@state` snapshots, and every getter declared by the actor class. An action must not declare an explicit `this` parameter; `@action` rejects it at compile time.
 
 Reading a getter through an `ActorRef` evaluates the class getter with the reference as `this`, so reads of `@state` fields and other getters use the reference's current snapshot. That `this` value contains only `@state` fields, getters, actions, `type`, and `id`; it does not contain `this.input`, private helpers, or fields without `@state`.
@@ -53,6 +58,7 @@ Calling an actor API outside `runtime.run(...)` throws `NoActiveActorRuntimeErro
 Use `this.asRef` inside an action to queue another action on the same actor.
 
 ```ts
+@actor("counter")
 class Counter extends Actor<Counter, { initial: number }> {
   @state accessor value = this.input.initial;
 
@@ -73,7 +79,7 @@ The self-reference exposes only `runDetached(...)`. The runtime delivers the mes
 Use detached actions as an outbox and model external work as a multi-transaction saga.
 
 ```ts
-import { Actor, action, state } from "@mekakucity/actors";
+import { Actor, action, actor, state } from "@mekakucity/actors";
 
 type PaymentResult =
   | { status: "approved"; authorizationId: string }
@@ -83,6 +89,7 @@ declare const paymentApi: {
   authorize(input: { idempotencyKey: string; amount: number }): Promise<PaymentResult>;
 };
 
+@actor("order")
 class Order extends Actor<Order, { orderId: string; amount: number }> {
   @state accessor orderId = this.input.orderId;
   @state accessor amount = this.input.amount;
@@ -107,6 +114,7 @@ class Order extends Actor<Order, { orderId: string; amount: number }> {
   }
 }
 
+@actor("payment-gateway")
 class PaymentGateway extends Actor<PaymentGateway, {}> {
   @action async authorize(orderId: string, amount: number): Promise<void> {
     const result = await paymentApi.authorize({ idempotencyKey: orderId, amount });

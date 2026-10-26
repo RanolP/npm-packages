@@ -1,4 +1,4 @@
-import { Actor, ActorKilledError, ActorResultSerializationError, ActorSnapshotUnavailableError, action, state } from "@mekakucity/actors";
+import { Actor, actor, ActorKilledError, ActorResultSerializationError, ActorSnapshotUnavailableError, action, state } from "@mekakucity/actors";
 import type { ActorRef } from "@mekakucity/actors";
 import type { ActorRuntime } from "@mekakucity/actors/runtime";
 import { describe, expect } from "vitest";
@@ -9,12 +9,15 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
   const { it, itWithSnapshotCacheEviction } = createRuntimeTestTools(factory, hooks);
   describe("@mekakucity/actors ref lifecycle", () => {
   it("keeps a ref dropped at a commit point alive when the action rolls back", async (runtime) => {
+    @actor("verify/ref-lifecycle/Boundary")
     class Boundary extends Actor<Boundary, {}> {
       @action async ping() { return "boundary"; }
     }
+    @actor("verify/ref-lifecycle/Child")
     class Child extends Actor<Child, {}> {
       @action async ping() { return "alive"; }
     }
+    @actor("verify/ref-lifecycle/RefHolder")
     class RefHolder extends Actor<RefHolder, { boundary: ActorRef<Boundary>; child: ActorRef<Child> }> {
       @state accessor boundary = this.input.boundary;
       @state accessor child: ActorRef<Child> | null = this.input.child;
@@ -39,10 +42,12 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
 
   it("commits detached messages to the outbox and drops them on rollback", async (runtime) => {
     const processed = deferred();
+    @actor("verify/ref-lifecycle/Receiver")
     class Receiver extends Actor<Receiver, {}> {
       @state accessor count = 0;
       @action async hit() { this.count += 1; processed.resolve(); }
     }
+    @actor("verify/ref-lifecycle/Sender")
     class Sender extends Actor<Sender, { receiver: ActorRef<Receiver> }> {
       @state accessor receiver = this.input.receiver;
       @action async sendThenFail() { this.receiver.hit.runDetached(); throw new Error("rollback"); }
@@ -66,10 +71,12 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
 
   it("delivers a detached message when the root fails after the sending action committed", async (runtime) => {
     const processed = deferred();
+    @actor("verify/ref-lifecycle/Receiver#2")
     class Receiver extends Actor<Receiver, {}> {
       @state accessor count = 0;
       @action async hit() { this.count += 1; processed.resolve(); }
     }
+    @actor("verify/ref-lifecycle/Sender#2")
     class Sender extends Actor<Sender, { receiver: ActorRef<Receiver> }> {
       @state accessor receiver = this.input.receiver;
       @action async send() { this.receiver.hit.runDetached(); }
@@ -88,6 +95,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
   });
 
   it("drops a detached message sent from the root context when the root fails", async (runtime) => {
+    @actor("verify/ref-lifecycle/Receiver#3")
     class Receiver extends Actor<Receiver, {}> {
       @state accessor count = 0;
       @action async hit() { this.count += 1; }
@@ -105,9 +113,11 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
   });
 
   it("a ref returned and dropped from state in the same action survives the root", async (runtime) => {
+    @actor("verify/ref-lifecycle/Child#2")
     class Child extends Actor<Child, {}> {
       @action async ping() { return "alive"; }
     }
+    @actor("verify/ref-lifecycle/Keeper")
     class Keeper extends Actor<Keeper, {}> {
       @state accessor child: ActorRef<Child> | null = null;
       @action async make() { this.child = await Actor.spawn(Child, {}); }
@@ -127,14 +137,17 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
 
   it("a detached message sent by a committed callee survives the caller action failing", async (runtime) => {
     const processed = deferred();
+    @actor("verify/ref-lifecycle/Receiver#4")
     class Receiver extends Actor<Receiver, {}> {
       @state accessor count = 0;
       @action async hit() { this.count += 1; processed.resolve(); }
     }
+    @actor("verify/ref-lifecycle/Callee")
     class Callee extends Actor<Callee, { receiver: ActorRef<Receiver> }> {
       @state accessor receiver = this.input.receiver;
       @action async send() { this.receiver.hit.runDetached(); }
     }
+    @actor("verify/ref-lifecycle/Caller")
     class Caller extends Actor<Caller, { callee: ActorRef<Callee> }> {
       @state accessor callee = this.input.callee;
       @action async go() { await this.callee.send(); throw new Error("caller failed"); }
@@ -156,9 +169,11 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
 
   it("collects an actor spawned by an action that later fails", async (runtime) => {
     let child!: ActorRef<SpawnedChild>;
+    @actor("verify/ref-lifecycle/SpawnedChild")
     class SpawnedChild extends Actor<SpawnedChild, {}> {
       @action async ping() { return "alive"; }
     }
+    @actor("verify/ref-lifecycle/Spawner")
     class Spawner extends Actor<Spawner, {}> {
       @action async spawnThenFail() { child = await Actor.spawn(SpawnedChild, {}); throw new Error("abort"); }
     }
@@ -172,15 +187,18 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
 
   it("keeps an actor spawned by a failed action alive when another actor committed a ref to it", async (runtime) => {
     let child!: ActorRef<KeptChild>;
+    @actor("verify/ref-lifecycle/KeptChild")
     class KeptChild extends Actor<KeptChild, {}> {
       @action async ping() { return "alive"; }
     }
+    @actor("verify/ref-lifecycle/Keeper#2")
     class Keeper extends Actor<Keeper, {}> {
       @state accessor child: ActorRef<KeptChild> | null = null;
       @action async keep(ref: ActorRef<KeptChild>) { this.child = ref; }
       @action async pingKept() { return this.child!.ping(); }
       @action async drop() { this.child = null; }
     }
+    @actor("verify/ref-lifecycle/Outer")
     class Outer extends Actor<Outer, { keeper: ActorRef<Keeper> }> {
       @state accessor keeper = this.input.keeper;
       @action async spawnHandOffThenFail() {
@@ -203,9 +221,11 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
 
   it("collects unheld anonymous actors and retains refs stored in actor state", async (runtime) => {
     let child!: ActorRef<LifeActor>;
+    @actor("verify/ref-lifecycle/LifeActor")
     class LifeActor extends Actor<LifeActor, {}> {
       @action async ping() { return "alive"; }
     }
+    @actor("verify/ref-lifecycle/Holder")
     class Holder extends Actor<Holder, {}> {
       @state accessor child: ActorRef<LifeActor> | null = null;
       @action async keep(ref: ActorRef<LifeActor>) { this.child = ref; }
@@ -225,6 +245,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     const messageStarted = deferred();
     const releaseMessage = deferred();
     const messageFinished = deferred();
+    @actor("verify/ref-lifecycle/MessageRecipient")
     class MessageRecipient extends Actor<MessageRecipient, {}> {
       @action async holdReference(ref: ActorRef<LifeActor>) {
         messageStarted.resolve();
@@ -233,6 +254,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
         messageFinished.resolve();
       }
     }
+    @actor("verify/ref-lifecycle/MessageSender")
     class MessageSender extends Actor<MessageSender, { recipient: ActorRef<MessageRecipient> }> {
       @state accessor recipient = this.input.recipient;
       @action async send(ref: ActorRef<LifeActor>) { this.recipient.holdReference.runDetached(ref); }
@@ -256,9 +278,11 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     const started = deferred();
     const release = deferred();
     const finished = deferred();
+    @actor("verify/ref-lifecycle/HandoffChild")
     class HandoffChild extends Actor<HandoffChild, {}> {
       @action async ping() { return "alive"; }
     }
+    @actor("verify/ref-lifecycle/HandoffRecipient")
     class HandoffRecipient extends Actor<HandoffRecipient, {}> {
       @action async receive(ref: ActorRef<HandoffChild>) {
         started.resolve();
@@ -267,6 +291,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
         finished.resolve();
       }
     }
+    @actor("verify/ref-lifecycle/HandoffSender")
     class HandoffSender extends Actor<HandoffSender, { recipient: ActorRef<HandoffRecipient>; child: ActorRef<HandoffChild> }> {
       @state accessor recipient = this.input.recipient;
       @state accessor child: ActorRef<HandoffChild> | null = this.input.child;
@@ -292,6 +317,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
   });
 
   it("kills an anonymous ref returned from the top-level transaction", async (runtime) => {
+    @actor("verify/ref-lifecycle/ReturnedActor")
     class ReturnedActor extends Actor<ReturnedActor, {}> {
       @state accessor value = "cached";
       @action async ping() { return "alive"; }
@@ -305,9 +331,11 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
   });
 
   itWithSnapshotCacheEviction("serializes refs as type/id data and refreshes a restored ref snapshot", async (runtime, evictSnapshotCache) => {
+    @actor("verify/ref-lifecycle/SnapshotActor")
     class SnapshotActor extends Actor<SnapshotActor, {}> {
       @state accessor value = 7;
     }
+    @actor("verify/ref-lifecycle/SnapshotHolder")
     class SnapshotHolder extends Actor<SnapshotHolder, { child: ActorRef<SnapshotActor> }> {
       @state accessor child = this.input.child;
     }
@@ -316,7 +344,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
     await runtime.run(async () => {
       const ref = await Actor.spawn(SnapshotActor, {});
       const wire = structuredClone(ref);
-      expect(wire).toEqual({ type: "SnapshotActor", id: ref.id });
+      expect(wire).toEqual({ type: "verify/ref-lifecycle/SnapshotActor", id: ref.id });
       expect(Object.keys(ref)).toEqual(["type", "id"]);
       holder = await Actor.ofNamed(SnapshotHolder, "snapshot-holder").orSpawn(() => ({ child: ref }));
     });
@@ -331,6 +359,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
 
   it("clone-checks action results and rehydrates returned actor refs", async (runtime) => {
     const resultSymbol = Symbol("result");
+    @actor("verify/ref-lifecycle/ResultChild")
     class ResultChild extends Actor<ResultChild, {}> {
       @action async ping() { return "alive"; }
     }
@@ -339,6 +368,7 @@ export const refLifecycleSuite = (factory: () => ActorRuntime, hooks?: ActorRunt
       method() { return this.value; }
     }
     let originalResult!: { nested: { value: number } };
+    @actor("verify/ref-lifecycle/ResultActor")
     class ResultActor extends Actor<ResultActor, {}> {
       @state accessor value = 0;
       @action async badFunction() {

@@ -1,4 +1,4 @@
-import { Actor, ActorReentrancyError, action, state } from "@mekakucity/actors";
+import { Actor, actor, ActorReentrancyError, action, state } from "@mekakucity/actors";
 import type { ActorRef } from "@mekakucity/actors";
 import type { ActorRuntime } from "@mekakucity/actors/runtime";
 import { describe, expect } from "vitest";
@@ -8,6 +8,7 @@ export const reentrancySuite = (factory: () => ActorRuntime, hooks?: ActorRuntim
   const { it } = createRuntimeTestTools(factory, hooks);
   describe("@mekakucity/actors reentrancy", () => {
   it("rejects A to B to A reentrancy but allows another instance of the same class and a direct self-call", async (runtime) => {
+    @actor("verify/reentrancy/RingActor")
     class RingActor extends Actor<RingActor, { peer?: ActorRef<RingActor> }> {
       @state accessor peer = this.input.peer ?? null as ActorRef<RingActor> | null;
       @action async callPeer(): Promise<string> { return this.peer?.callPeer() ?? "done"; }

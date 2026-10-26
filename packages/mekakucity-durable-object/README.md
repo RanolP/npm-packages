@@ -1,6 +1,6 @@
 # @mekakucity/durable-object
 
-`@mekakucity/durable-object` runs `@mekakucity/actors` actors on Cloudflare Durable Objects. Each actor lives in its own SQLite-backed Durable Object, which stores its state, holders and outbox, so one segment commit is one storage transaction. The worker registers its actor classes once with `defineActorHost` and talks to actors through `DurableObjectActorRuntime`.
+`@mekakucity/durable-object` runs `@mekakucity/actors` actors on Cloudflare Durable Objects. Each actor lives in its own SQLite-backed Durable Object, which stores its state, holders and outbox, so one segment commit is one storage transaction. The worker marks its actor classes with `@actor(id)`, re-exports `ActorHost`, and talks to actors through `DurableObjectActorRuntime`.
 
 ## Install the runtime
 
@@ -29,13 +29,16 @@ The host class must be bound as `ACTOR_HOST`: actions running inside one actor r
 
 ## Register actor classes in the worker entry
 
-Call `defineActorHost` at module load with every actor class the worker uses, and export the class it returns under the `class_name` from wrangler.jsonc. A Durable Object can wake in an isolate where no caller has run yet; it finds its class only through this registration.
+Decorate every actor class with `@actor(id)` and re-export `ActorHost` from the worker entry under the `class_name` from wrangler.jsonc. `@actor` registers the class when its module is evaluated, so the worker entry must import every module that defines an actor class: a Durable Object can wake in an isolate where no caller has run yet, and it finds its class only through that registration.
 
 ```ts
 // src/worker.ts
-import { Actor, action, state } from "@mekakucity/actors";
-import { defineActorHost, DurableObjectActorRuntime } from "@mekakucity/durable-object";
+import { Actor, action, actor, state } from "@mekakucity/actors";
+import { DurableObjectActorRuntime, type ActorHost } from "@mekakucity/durable-object";
 
+export { ActorHost } from "@mekakucity/durable-object";
+
+@actor("counter")
 class Counter extends Actor<Counter, { initial: number }> {
   @state accessor value = this.input.initial;
 
@@ -45,10 +48,8 @@ class Counter extends Actor<Counter, { initial: number }> {
   }
 }
 
-export const ActorHost = defineActorHost({ Counter });
-
 interface Env {
-  ACTOR_HOST: DurableObjectNamespace<InstanceType<typeof ActorHost>>;
+  ACTOR_HOST: DurableObjectNamespace<ActorHost>;
 }
 
 export default {
@@ -63,17 +64,20 @@ export default {
 };
 ```
 
-Spawning or looking up a class that was not passed to `defineActorHost` throws in the caller, and the error names the class.
+Spawning or looking up a class without `@actor` throws `ActorRuntimeError` in the caller, and the error names the class. A reference or a host lookup for a type id that no loaded class carries throws `ActorRuntimeError` too, instead of producing a reference without actions.
 
 `scope` separates named actors: runtimes with the same scope share `Actor.ofNamed(Counter, "visits")`, and runtimes with different scopes each get their own. It defaults to `"default"`. Registered classes are shared by the whole worker regardless of scope.
 
-## Keep registration keys stable
+## Keep actor ids stable
 
-Each key in the object passed to `defineActorHost` is the type name stored with every actor of that class. Renaming a key orphans the actors already stored under the old name: their Durable Objects can no longer find a class. Renaming the class itself, or minifying the bundle, is safe as long as the key stays the same.
+The `@actor` id is the type id stored with every actor of that class. Changing an id orphans the actors already stored under the old one: their Durable Objects can no longer find a class. Renaming the class itself, or minifying the bundle, is safe as long as the id stays the same.
 
 ```ts
-// Renamed the class, kept the stored name.
-export const ActorHost = defineActorHost({ Counter: VisitCounter });
+// Renamed the class, kept the stored id.
+@actor("counter")
+class VisitCounter extends Actor<VisitCounter, { initial: number }> {
+  // ...
+}
 ```
 
-A key bound to two different classes, or one class registered under two keys, throws when `defineActorHost` runs.
+When two classes are defined under the same id, the later one wins and `console.warn` names the id and both classes.

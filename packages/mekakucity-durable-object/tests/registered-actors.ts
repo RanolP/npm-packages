@@ -1,6 +1,7 @@
-import { Actor, action, state } from "@mekakucity/actors";
+import { Actor, action, actor, state } from "@mekakucity/actors";
 
-/** Registered by tests/worker.ts under the key "Tally", deliberately not its class name. */
+/** Registered under the id "Tally", deliberately not its class name; tests/worker.ts imports this module. */
+@actor("Tally")
 export class TallyActor extends Actor<TallyActor, { count: number }> {
   @state accessor count = this.input.count;
 

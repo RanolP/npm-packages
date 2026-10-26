@@ -1,5 +1,6 @@
 export { Actor } from "./core/actor.js";
 export { action, state } from "./action/decorators.js";
+export { actor } from "./core/actor-type.js";
 export { ActorResultSerializationError, ActorReentrancyError } from "./action/errors.js";
 export { ActorKilledError, ActorSelfRefUnavailableError } from "./ref/errors.js";
 export type { ActorInput, ActorRef, ActorRefInit, ActorSelfRef, Cloneable, DeepReadonly } from "./ref/types.js";
