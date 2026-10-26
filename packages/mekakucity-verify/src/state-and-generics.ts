@@ -41,14 +41,12 @@ export const stateAndGenericsSuite = (factory: () => ActorRuntime, hooks?: Actor
   it("generic action methods keep their call-site type on refs", async (runtime) => {
     class EchoActor extends Actor<EchoActor, {}> {
       @action async echo<T extends Cloneable>(value: T): Promise<T> { return value; }
-      @action async selfy(this: EchoActor): Promise<number> { return 42; }
     }
 
     await runtime.run(async () => {
       const ref = await Actor.spawn(EchoActor, {});
       expect(await ref.echo(5)).toBe(5);
       expect(await ref.echo("a")).toBe("a");
-      expect(await ref.selfy()).toBe(42);
     });
   });
   });

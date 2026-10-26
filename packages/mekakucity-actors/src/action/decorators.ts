@@ -65,6 +65,12 @@ export const derived = <This extends object, Value>(
   });
 };
 
+// ActorRef calls an action with the ref, not the actor, as `this`, so an explicit `this` parameter is rejected here.
+// The decorator sees only the implementation signature; `this` declared on overload signatures alone surfaces as TS2684 at the ref call site.
+type NoExplicitThis<Method> = unknown extends ThisParameterType<Method>
+  ? unknown
+  : "@action methods must not declare an explicit `this` parameter";
+
 export interface ActionDecorator {
   <
     This extends object,
@@ -73,13 +79,15 @@ export interface ActionDecorator {
     Method extends (this: This, ...args: Args) => Promise<Result>,
   >(
     value: Method
-      & ((this: This, ...args: Args) => Promise<StructuredCloneable<NoInfer<Result>>>),
+      & ((this: This, ...args: Args) => Promise<StructuredCloneable<NoInfer<Result>>>)
+      & NoExplicitThis<NoInfer<Method>>,
     context: ClassMethodDecoratorContext<This, Method>,
   ): Method;
-  <This extends object, Args extends unknown[], Result extends Promise<unknown>>(
+  <This extends object, Args extends unknown[], Result extends Promise<unknown>, Method>(
     value: ((this: This, ...args: Args) => Result & Promise<0 extends (1 & Awaited<NoInfer<Result>>) ? never : StructuredCloneable<Awaited<NoInfer<Result>>>>)
-      & (unknown extends Awaited<NoInfer<Result>> ? never : unknown),
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>,
+      & (unknown extends Awaited<NoInfer<Result>> ? never : unknown)
+      & NoExplicitThis<NoInfer<Method>>,
+    context: ClassMethodDecoratorContext<This, Method & ((this: This, ...args: Args) => Result)>,
   ): (this: This, ...args: Args) => Result;
 }
 
