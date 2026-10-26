@@ -42,7 +42,9 @@ await runtime.run(async () => {
 });
 ```
 
-`Actor.spawn` returns an `ActorRef`, not the actor instance. The reference exposes decorated asynchronous actions and read-only state snapshots. An action must not declare an explicit `this` parameter; `@action` rejects it at compile time.
+`Actor.spawn` returns an `ActorRef`, not the actor instance. The reference exposes decorated asynchronous actions, read-only `@state` snapshots, and every getter declared by the actor class. An action must not declare an explicit `this` parameter; `@action` rejects it at compile time.
+
+Reading a getter through an `ActorRef` evaluates the class getter with the reference as `this`, so reads of `@state` fields and other getters use the reference's current snapshot. That `this` value contains only `@state` fields, getters, actions, `type`, and `id`; it does not contain `this.input`, private helpers, or fields without `@state`.
 
 Calling an actor API outside `runtime.run(...)` throws `NoActiveActorRuntimeError`. A nested `run` on the same runtime joins the open transaction; a nested `run` on another runtime opens an isolated transaction owned by that runtime.
 
@@ -115,14 +117,14 @@ Import `ActorRuntime` from `@mekakucity/actors` or the runtime-author entry poin
 - `invokeRefAction(ref, actionName, args)` sends an action through a reference.
 - `invokeLocalAction(instance, actionName, args, run)` invokes a decorated action on its owning actor.
 - `runDetached(ref, actionName, args)` registers detached delivery with the transaction.
-- `readSnapshotValue(ref, key)` reads cached state or a derived value.
+- `readSnapshotValue(ref, key)` reads cached state.
 
 The `@mekakucity/actors/runtime` entry point also exports storage-independent building blocks for runtime implementations:
 
 | Domain | Exports |
 | --- | --- |
 | Actor metadata | `metadataFor`, `actionNameOf` |
-| References | `createActorRef`, `isActorDescriptor`, `hydrateActorRefs`, `collectActorRefIds` |
+| References | `actorRefSurfaceFor`, `createActorRef`, `isActorDescriptor`, `hydrateActorRefs`, `collectActorRefIds` |
 | State cloning | `cloneOrThrow`, `assertCloneableResultPrototypes` |
 | State snapshots | `stateFields`, `cloneState`, `restoreState`, `createSnapshot`, `changedStateFields`, `restoreSnapshotData`, `deepFreeze` |
 | Helper types | `ActorMetadata`, `ActorRefSurface`, `ActorRefHydration`, `ActorStateRecord`, `ActorSnapshot`, `StateData` |

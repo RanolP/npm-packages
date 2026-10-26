@@ -1,11 +1,29 @@
-import type { Actor } from "../core/actor.js";
+import { Actor } from "../core/actor.js";
+import { metadataFor } from "../action/decorators.js";
 import { ActorRuntime, type ActorDescriptor } from "../runtime/actor-runtime.js";
 import type { ActorRef } from "./types.js";
 
 export interface ActorRefSurface {
   readonly values: Iterable<string>;
   readonly actions: Iterable<string>;
+  readonly getters: Iterable<readonly [string, (this: object) => unknown]>;
 }
+
+export const actorRefSurfaceFor = (ctor: Function): ActorRefSurface => {
+  const metadata = metadataFor(ctor);
+  const getters = new Map<string, (this: object) => unknown>();
+  const seen = new Set<string>();
+  for (let prototype = ctor.prototype; prototype && prototype !== Actor.prototype; prototype = Object.getPrototypeOf(prototype)) {
+    for (const key of Object.getOwnPropertyNames(prototype)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (metadata.state.has(key) || metadata.actions.has(key)) continue;
+      const getter = Object.getOwnPropertyDescriptor(prototype, key)?.get;
+      if (getter) getters.set(key, getter);
+    }
+  }
+  return { values: metadata.state, actions: metadata.actions.keys(), getters };
+};
 
 export const createActorRef = <T extends Actor<unknown, unknown>>(
   descriptor: ActorDescriptor,
@@ -17,6 +35,13 @@ export const createActorRef = <T extends Actor<unknown, unknown>>(
       enumerable: false,
       configurable: false,
       get: () => ActorRuntime.current(`Read actor ref ${ref.id}`).readSnapshotValue(ref, key),
+    });
+  }
+  for (const [key, getter] of surface.getters) {
+    Object.defineProperty(ref, key, {
+      enumerable: false,
+      configurable: false,
+      get: () => getter.call(ref),
     });
   }
   for (const key of surface.actions) {

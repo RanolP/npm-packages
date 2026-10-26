@@ -16,6 +16,7 @@ import {
 } from "@mekakucity/actors";
 import {
   NAMED_ROOT,
+  actorRefSurfaceFor,
   assertCloneableResultPrototypes,
   cloneOrThrow,
   collectActorRefIds,
@@ -26,7 +27,6 @@ import {
   isActorDescriptor,
   messageHolder,
   messageReleaseOps,
-  metadataFor,
   recordTxHold,
   txHolder,
   txReleaseOps,
@@ -129,13 +129,10 @@ export class RuntimeCore {
   }
 
   makeRef<T extends Actor<unknown, unknown>>(type: string, id: string): ActorRef<T> {
-    const metadata = isKnownType(type, this.scope) ? metadataForType(type, this.scope) : undefined;
+    const Type = lookupType(type, this.scope)?.Type;
     const ref = createActorRef<T>(
       { type, id },
-      {
-        values: metadata ? [...metadata.state, ...metadata.derived] : [],
-        actions: metadata?.actions.keys() ?? [],
-      },
+      Type ? actorRefSurfaceFor(Type) : { values: [], actions: [], getters: [] },
     );
     this.#refs.add(ref);
     snapshots.track(ref, id);
@@ -355,8 +352,6 @@ export class RuntimeCore {
     return deepFreeze(this.hydrate(structuredClone(entry.data[key])));
   }
 }
-
-const metadataForType = (type: string, scope: string) => metadataFor(lookupTypeOrThrow(type, scope).Type);
 
 export const lookupTypeOrThrow = (type: string, scope: string): RegisteredType => {
   const Type = lookupType(type, scope);

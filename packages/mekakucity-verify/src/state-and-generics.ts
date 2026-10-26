@@ -1,4 +1,4 @@
-import { Actor, action, derived, state } from "@mekakucity/actors";
+import { Actor, action, state } from "@mekakucity/actors";
 import type { Cloneable } from "@mekakucity/actors";
 import type { ActorRuntime } from "@mekakucity/actors/runtime";
 import { describe, expect } from "vitest";
@@ -6,7 +6,26 @@ import { createRuntimeTestTools, type ActorRuntimeConformanceHooks } from "./run
 
 export const stateAndGenericsSuite = (factory: () => ActorRuntime, hooks?: ActorRuntimeConformanceHooks): void => {
   const { it } = createRuntimeTestTools(factory, hooks);
-  describe("@mekakucity/actors state, derived values, and generics", () => {
+  describe("@mekakucity/actors state, getters, and generics", () => {
+  it("keeps ref getters defined and current with state", async (runtime) => {
+    class GetterCounter extends Actor<GetterCounter, {}> {
+      @state accessor count = 1;
+      get doubled() { return this.count * 2; }
+      get label() { return `count:${this.doubled}`; }
+      @action async increment() { this.count += 1; }
+    }
+
+    await runtime.run(async () => {
+      const ref = await Actor.spawn(GetterCounter, {});
+      expect(ref.doubled).toBe(2);
+      expect(ref.label).toBe("count:2");
+      await ref.increment();
+      await Actor.refreshValues(ref);
+      expect(ref.doubled).toBe(4);
+      expect(ref.label).toBe("count:4");
+    });
+  });
+
   it("generic actor classes work when spawned with a pinned item type", async (runtime) => {
     class Queue<T extends Cloneable> extends Actor<Queue<T>, { items: T[] }> {
       @state accessor items: T[] = this.input.items;
