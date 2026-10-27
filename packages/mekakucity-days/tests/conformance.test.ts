@@ -17,6 +17,7 @@ const effectFactory = () => {
 };
 
 actorRuntimeConformance(coreFactory, {
+  createWithContext: (contextProvider) => new InMemoryActorRuntime({ contextProvider }),
   evictSnapshotCache(ref) {
     const runtime = ActorRuntime.current("evict the in-memory snapshot cache");
     if (!(runtime instanceof InMemoryActorRuntime)) throw new TypeError("Expected InMemoryActorRuntime");

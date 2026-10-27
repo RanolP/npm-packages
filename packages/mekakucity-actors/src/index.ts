@@ -23,3 +23,5 @@ export type {
   PendingActorMessage,
 } from "./runtime/actor-runtime.js";
 export { ActorRuntimeError, NoActiveActorRuntimeError, NoActiveTransactionError } from "./runtime/errors.js";
+export { ActorContextUnavailableError, ActorTransactionHookError } from "./runtime/errors.js";
+export type { ActorContext, ActorContextProvider, ActorTransactionHooks } from "./runtime/actor-context.js";

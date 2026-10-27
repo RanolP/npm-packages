@@ -32,6 +32,10 @@ export interface CallContext {
   readonly chain: readonly string[];
   /** The calling frame when the caller is itself an actor action; the callee hands its spawns to it. */
   readonly parentFrameId?: string;
+  /** Per-call application context, carried explicitly because AsyncLocalStorage does not cross a stub. */
+  readonly carried?: unknown;
+  /** Actor whose detached invocation started this call chain; absent for caller-started chains. */
+  readonly origin?: ActorDescriptor;
 }
 
 export interface ActorView {

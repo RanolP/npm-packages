@@ -8,6 +8,10 @@ import { snapshots } from "../src/snapshots.js";
 const factory = () => new DurableObjectActorRuntime(env.ACTOR_HOST, { scope: crypto.randomUUID() });
 
 actorRuntimeConformance(factory, {
+  createWithContext: (contextProvider) => new DurableObjectActorRuntime(env.ACTOR_HOST, {
+    scope: crypto.randomUUID(),
+    contextProvider,
+  }),
   // The isolate-wide snapshot cache is internal (not exported from the package entry), so tests reach it by path.
   evictSnapshotCache: (ref) => snapshots.delete(ref.id),
 });

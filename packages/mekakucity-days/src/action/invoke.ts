@@ -6,6 +6,7 @@ import {
 } from "@mekakucity/actors";
 import {
   changedStateFields,
+  cloneOrThrow,
   cloneState,
   metadataFor,
   restoreSnapshotData,
@@ -36,6 +37,8 @@ export const invokeActorAction = async (
   parent: ActionFrame | undefined,
   inheritedChain: Set<string>,
   baseVersion = -1,
+  carried?: unknown,
+  origin?: ActorDescriptor,
 ): Promise<ActionReply> => {
   const record = await root.backend.route(actorId);
   if (!record) throw new ActorKilledError(actorId);
@@ -70,8 +73,9 @@ export const invokeActorAction = async (
   return withMailbox(record, async () => {
     const method = metadataFor(record.instance).actions.get(actionName);
     if (!method) throw new ActorRuntimeError(`Unknown actor action ${actionName}`);
-    const frame = makeFrame(memory, record, root, parent, chain);
+    const frame = makeFrame(memory, record, root, parent, chain, carried, origin);
     return memory.execution.run({ root, frame, chain }, async () => {
+      let reply: ActionReply;
       try {
         const callArgs = hydrateRefs(memory, structuredClone(args));
         const value = cloneActionResult(memory, record, actionName, await method.apply(record.instance, callArgs));
@@ -86,7 +90,7 @@ export const invokeActorAction = async (
         const snapshot = frame.startVersion === baseVersion
           ? changedStateFields(frame.initialState, restoreSnapshotData(record), record)
           : structuredClone(record.snapshot);
-        return {
+        reply = {
           value: hydrateRefs(memory, value),
           baseVersion,
           startVersion: frame.startVersion,
@@ -99,8 +103,11 @@ export const invokeActorAction = async (
         discardFrameSpawns(frame);
         rollbackOutbox(root, frame.outbox);
         await drainHolderOps(root);
+        await frame.invocation.afterRollback(error);
         throw error;
       }
+      await frame.invocation.afterCommit();
+      return reply;
     });
   });
 };
@@ -124,6 +131,15 @@ export const invokeRefAction = async (
 ): Promise<unknown> => {
   const context = currentExecution(memory, `Call actor action ${actionName}`);
   const sameActor = context.frame?.record.id === ref.id;
+  const carried = context.frame
+    ? context.frame.invocation.carried
+    : memory.contextProvider
+      ? cloneOrThrow(
+        memory.contextProvider.carry(),
+        (cause) => new ActorRuntimeError("Actor context carried value must be structuredClone-serializable", { cause }),
+      )
+      : undefined;
+  const origin = context.frame?.invocation.origin;
   const reply = await invokeActorAction(
     memory,
     context.root,
@@ -133,6 +149,8 @@ export const invokeRefAction = async (
     context.frame,
     context.chain,
     snapshotVersion(memory, ref.id),
+    carried,
+    origin,
   );
   memory.lastReplyForTest = reply;
   if (!sameActor) await applyReply(memory, reply, ref.id);

@@ -53,6 +53,40 @@ Reading a getter through an `ActorRef` evaluates the class getter with the refer
 
 Calling an actor API outside `runtime.run(...)` throws `NoActiveActorRuntimeError`. A nested `run` on the same runtime joins the open transaction; a nested `run` on another runtime opens an isolated transaction owned by that runtime.
 
+## Add application context to actor calls
+
+Augment `ActorContext` with application-owned values, then configure the runtime with an `ActorContextProvider`. `carry()` captures the serializable caller value for each top-level action call. `build()` reconstructs `this.ctx` lazily for the receiving action.
+
+```ts
+import type { ActorContextProvider } from "@mekakucity/actors";
+import { InMemoryActorRuntime } from "@mekakucity/days";
+
+declare module "@mekakucity/actors" {
+  interface ActorContext {
+    requestId: string;
+    log(message: string): void;
+  }
+}
+
+const contextProvider: ActorContextProvider<{ requestId: string }> = {
+  carry: () => ({ requestId: requestContext.getStore()!.requestId }),
+  build: (carried, hooks, self, origin) => ({
+    requestId: carried!.requestId,
+    log: (message) => logger.info({ actor: self, origin, message }),
+  }),
+};
+
+const runtime = new InMemoryActorRuntime({ contextProvider });
+```
+
+An actor reads the current invocation through `this.ctx`. The value is cached only for that invocation and is never stored in actor state or snapshots. Nested actor calls preserve the outer carried value without calling `carry()` again. Detached actions receive `undefined` as their carried value.
+
+The fourth `build()` argument is the detached-chain origin. It is `undefined` for a call chain started outside an actor. A detached invocation receives its own descriptor, and nested actor calls retain that descriptor for the rest of the chain.
+
+`build()` can register transaction work through `hooks.onRollback(fn)` and `hooks.afterCommit(fn)`. Rollback hooks run in reverse registration order after state rollback; commit hooks run in registration order after state commit. The runtime awaits every applicable hook. If one or more hooks fail, the action call rejects with `ActorTransactionHookError`; a committed action stays committed, and a rollback failure retains the original action error as its cause.
+
+Reading `this.ctx` outside an active action or without a configured provider throws `ActorContextUnavailableError`.
+
 ## Send a detached message to the same actor
 
 Use `this.asRef` inside an action to queue another action on the same actor.

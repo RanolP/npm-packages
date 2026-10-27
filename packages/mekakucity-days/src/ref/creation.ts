@@ -5,7 +5,7 @@ import type {
   ActorRef,
   ActorRefInit,
 } from "@mekakucity/actors";
-import { createSnapshot, recordTxHold, txHolder } from "@mekakucity/actors/runtime";
+import { ActorInvocationContext, createSnapshot, recordTxHold, txHolder } from "@mekakucity/actors/runtime";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import { commitSegment, updateStateHolders } from "../state/commit.js";
 import { cacheSnapshot } from "../state/snapshot.js";
@@ -54,6 +54,12 @@ export const createActor = async <T extends Actor<unknown, unknown>>(
     record: initial,
     root: context.root,
     chain: new Set(),
+    invocation: new ActorInvocationContext(
+      context.frame?.invocation.carried,
+      memory.contextProvider,
+      { type, id },
+      context.frame?.invocation.origin,
+    ),
     txHolder: txHolder(context.root.id, initialFrameId),
     startVersion: 0,
     initialState: first.state,

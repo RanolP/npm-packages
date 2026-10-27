@@ -1,7 +1,8 @@
+import type { ActorDescriptor } from "@mekakucity/actors";
 import type { ActorRecord } from "../ref/in-memory-store.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import type { ActionFrame, RootTransaction } from "../transaction/context.js";
-import { cloneState, resolveActorMessage, txHolder } from "@mekakucity/actors/runtime";
+import { ActorInvocationContext, cloneState, resolveActorMessage, txHolder } from "@mekakucity/actors/runtime";
 
 export const makeFrame = (
   memory: RuntimeMemory,
@@ -9,6 +10,8 @@ export const makeFrame = (
   root: RootTransaction,
   parent: ActionFrame | undefined,
   chain: Set<string>,
+  carried: unknown,
+  origin?: ActorDescriptor,
 ): ActionFrame => {
   const state = cloneState(record);
   const id = `frame_${++memory.sequence.frame}`;
@@ -18,6 +21,12 @@ export const makeFrame = (
     root,
     parent,
     chain,
+    invocation: new ActorInvocationContext(
+      carried,
+      memory.contextProvider,
+      { type: record.type, id: record.id },
+      origin,
+    ),
     // Same-actor nested calls never release their tx holds on their own (only the root does), so one key is safe.
     txHolder: parent?.record === record ? parent.txHolder : txHolder(root.id, id),
     startVersion: record.version,

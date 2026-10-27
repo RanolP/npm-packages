@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Actor } from "../core/actor.js";
 import type { ActorInput, ActorRef, ActorRefInit } from "../ref/types.js";
 import { ActorRuntimeError, NoActiveActorRuntimeError } from "./errors.js";
+import type { ActorContext } from "./actor-context.js";
 
 export type ActorConstructor<T extends Actor<unknown, unknown>> = new (input: ActorInput<T>) => T;
 
@@ -60,6 +61,7 @@ export abstract class ActorRuntime {
   abstract named<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T>;
   abstract refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>>;
   abstract selfDescriptorOf(instance: object): ActorDescriptor;
+  abstract actorContextOf(instance: object): ActorContext;
   abstract invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown>;
   abstract invokeLocalAction(instance: object, actionName: string, args: unknown[], run: () => unknown): unknown;
   abstract runDetached(
