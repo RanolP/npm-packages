@@ -1,6 +1,6 @@
 {
   "name": "@mekakucity/actors",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Runtime-independent actor contract for TypeScript",
   "type": "module",
   "main": "./dist/index.js",
