@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   ActorKilledError,
+  ActorContextUnavailableError,
   ActorReentrancyError,
   ActorResultSerializationError,
   ActorRuntime,
@@ -9,6 +10,8 @@ import {
   ActorSnapshotUnavailableError,
   NoActiveTransactionError,
   type Actor,
+  type ActorContext,
+  type ActorContextProvider,
   type ActorConstructor,
   type ActorDescriptor,
   type ActorDetachedSchedule,
@@ -18,6 +21,7 @@ import {
 } from "@mekakucity/actors";
 import {
   NAMED_ROOT,
+  ActorInvocationContext,
   actorRefSurfaceFor,
   assertCloneableResultPrototypes,
   cloneOrThrow,
@@ -72,6 +76,7 @@ export interface ActionFrame {
   readonly root: RootTransaction;
   readonly parent?: ActionFrame;
   readonly chain: Set<string>;
+  readonly invocation: ActorInvocationContext;
   readonly startVersion: number;
   readonly initialState: StateData;
   readonly spawnedIds: Set<string>;
@@ -84,6 +89,7 @@ interface Execution {
   readonly root: RootTransaction;
   readonly frame?: ActionFrame;
   readonly chain: Set<string>;
+  readonly carried: unknown;
 }
 
 /** What a runtime living inside an ActorHost needs from that host. */
@@ -98,6 +104,7 @@ export interface LocalActor {
 export interface DurableObjectActorRuntimeOptions {
   /** Separates named-actor keys; runtimes that share a scope share named actors. Types (@actor ids) are worker-wide. */
   readonly scope?: string;
+  readonly contextProvider?: ActorContextProvider;
 }
 
 export class RuntimeCore {
@@ -110,6 +117,7 @@ export class RuntimeCore {
     readonly binding: DurableObjectNamespace<ActorHost>,
     readonly scope: string,
     readonly enter: <T>(work: () => T) => T,
+    readonly contextProvider?: ActorContextProvider,
   ) {}
 
   stub(id: string): ActorHostRpc {
@@ -126,8 +134,20 @@ export class RuntimeCore {
     return { id, local, holder: txHolder(id, callId), owned: new Map(), outbox: [], holds: [] };
   }
 
-  callContext(context: Execution, callId: string): CallContext {
-    return { rootId: context.root.id, callId, chain: [...context.chain], parentFrameId: context.frame?.id };
+  callContext(
+    context: Execution,
+    callId: string,
+    carried: unknown,
+    origin?: ActorDescriptor,
+  ): CallContext {
+    return {
+      rootId: context.root.id,
+      callId,
+      chain: [...context.chain],
+      parentFrameId: context.frame?.id,
+      carried,
+      origin,
+    };
   }
 
   // ---- refs and snapshots ------------------------------------------------
@@ -210,7 +230,7 @@ export class RuntimeCore {
     const root = this.newRoot(true);
     let result: Awaited<Result>;
     try {
-      result = await this.execution.run({ root, chain: new Set() }, async () => await work());
+      result = await this.execution.run({ root, chain: new Set(), carried: undefined }, async () => await work());
     } catch (error) {
       await this.finishRoot(root, false);
       throw error;
@@ -304,6 +324,14 @@ export class RuntimeCore {
     return { type: this.local.type, id: this.local.id };
   }
 
+  actorContextOf(instance: object): ActorContext {
+    const context = this.current("Read Actor.ctx");
+    if (!context.frame || !this.local || this.local.instance !== instance) {
+      throw new ActorContextUnavailableError();
+    }
+    return context.frame.invocation.get();
+  }
+
   async invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
     const context = this.current(`Call actor action ${actionName}`);
     const { frame } = context;
@@ -316,10 +344,22 @@ export class RuntimeCore {
     }
     if (context.chain.has(ref.id)) throw new ActorReentrancyError(ref.id);
     await this.#commitParent(context);
+    const carried = frame
+      ? context.carried
+      : this.contextProvider
+        ? cloneOrThrow(
+          this.contextProvider.carry(),
+          (cause) => new ActorRuntimeError(
+            "Actor context carried value must be structuredClone-serializable",
+            { cause },
+          ),
+        )
+        : undefined;
+    const origin = frame?.invocation.origin;
     const reply = unwrap(await this.stub(ref.id).invoke({
       action: actionName,
       args: structuredClone(args),
-      context: this.callContext(context, crypto.randomUUID()),
+      context: this.callContext(context, crypto.randomUUID(), carried, origin),
     }));
     for (const { target, holder } of reply.owned) recordTxHold(context.root.owned, target, holder);
     if (frame) for (const id of reply.spawnedIds) frame.spawnedIds.add(id);
@@ -382,7 +422,12 @@ export class DurableObjectActorRuntime extends ActorRuntime {
 
   constructor(binding: DurableObjectNamespace<ActorHost>, options: DurableObjectActorRuntimeOptions = {}) {
     super();
-    this.#core = new RuntimeCore(binding, options.scope ?? "default", (work) => this.withActiveRuntime(work));
+    this.#core = new RuntimeCore(
+      binding,
+      options.scope ?? "default",
+      (work) => this.withActiveRuntime(work),
+      options.contextProvider,
+    );
   }
 
   static {
@@ -409,6 +454,10 @@ export class DurableObjectActorRuntime extends ActorRuntime {
     return this.#core.selfDescriptorOf(instance);
   }
 
+  actorContextOf(instance: object): ActorContext {
+    return this.#core.actorContextOf(instance);
+  }
+
   invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
     return this.#core.invokeRefAction(ref, actionName, args);
   }
@@ -427,5 +476,8 @@ export class DurableObjectActorRuntime extends ActorRuntime {
 }
 
 /** The runtime an ActorHost runs its actor's actions under; not part of the package's public surface. */
-export const createHostRuntimeCore = (binding: DurableObjectNamespace<ActorHost>, scope: string): RuntimeCore =>
-  coreOf(new DurableObjectActorRuntime(binding, { scope }));
+export const createHostRuntimeCore = (
+  binding: DurableObjectNamespace<ActorHost>,
+  scope: string,
+  contextProvider?: ActorContextProvider,
+): RuntimeCore => coreOf(new DurableObjectActorRuntime(binding, { scope, contextProvider }));

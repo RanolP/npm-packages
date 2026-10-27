@@ -1,8 +1,11 @@
 import {
   Actor,
+  ActorContextUnavailableError,
   ActorRuntime,
   ActorSelfRefUnavailableError,
   type ActorConstructor,
+  type ActorContext,
+  type ActorContextProvider,
   type ActorDescriptor,
   type ActorDetachedSchedule,
   type ActorInput,
@@ -14,7 +17,7 @@ import { invokeLocal } from "./action/nested.js";
 import { dispatchDetached, enqueueDetached } from "./outbox/runtime.js";
 import { namedActor, spawnActor } from "./ref/creation.js";
 import { refreshActorValues, typeName } from "./ref/surface.js";
-import { createRuntimeMemory } from "./runtime/memory.js";
+import { createRuntimeMemory, type RuntimeMemory } from "./runtime/memory.js";
 import { readSnapshotValue } from "./state/snapshot.js";
 import { inMemoryActorRuntimeTestHooks, type InMemoryActorRuntimeTestHooks } from "./testing.js";
 import { currentExecution } from "./transaction/context.js";
@@ -30,14 +33,15 @@ interface PendingDelivery {
 }
 
 export class InMemoryActorRuntime extends ActorRuntime {
-  readonly #memory = createRuntimeMemory();
+  readonly #memory: RuntimeMemory;
   readonly #pendingDeliveries: PendingDelivery[] = [];
   readonly #deliveryTails = new Map<string, Promise<void>>();
   #deliverySequence = 0;
   #deliveryInterval: ReturnType<typeof setInterval> | undefined;
 
-  constructor() {
+  constructor(options: InMemoryActorRuntimeOptions = {}) {
     super();
+    this.#memory = createRuntimeMemory(options.contextProvider);
     this.#memory.backend.setDeliveryHandler((message) => {
       this.#pendingDeliveries.push({ message, sequence: ++this.#deliverySequence });
       this.#pendingDeliveries.sort((left, right) =>
@@ -115,6 +119,15 @@ export class InMemoryActorRuntime extends ActorRuntime {
     return { type: typeName(instance.constructor), id };
   }
 
+  actorContextOf(instance: object): ActorContext {
+    const actorId = this.#memory.instanceIds.get(instance);
+    const context = currentExecution(this.#memory, "Read Actor.ctx");
+    if (!actorId || !context.frame || context.frame.record.id !== actorId) {
+      throw new ActorContextUnavailableError();
+    }
+    return context.frame.invocation.get();
+  }
+
   invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
     return invokeRefAction(this.#memory, ref, actionName, args);
   }
@@ -137,4 +150,8 @@ export class InMemoryActorRuntime extends ActorRuntime {
       lastActionReply: () => this.#memory.lastReplyForTest,
     };
   }
+}
+
+export interface InMemoryActorRuntimeOptions {
+  readonly contextProvider?: ActorContextProvider;
 }

@@ -4,7 +4,8 @@ import { immediateActorSchedule, normalizeActorSchedule } from "../ref/schedule.
 import type { ActorInput, ActorRef, ActorRefInit, ActorScheduleOptions, ActorSelfRef } from "../ref/types.js";
 import type { ActorDescriptor, ActorConstructor } from "../runtime/actor-runtime.js";
 import { ActorRuntime } from "../runtime/actor-runtime.js";
-import { NoActiveActorRuntimeError } from "../runtime/errors.js";
+import { ActorContextUnavailableError, NoActiveActorRuntimeError } from "../runtime/errors.js";
+import type { ActorContext } from "../runtime/actor-context.js";
 
 const currentRuntimeForSelfRef = (): ActorRuntime => {
   try {
@@ -21,6 +22,15 @@ export abstract class Actor<Self, Input> {
 
   constructor(input: Input) {
     this.input = input;
+  }
+
+  protected get ctx(): ActorContext {
+    try {
+      return ActorRuntime.current("Read Actor.ctx").actorContextOf(this);
+    } catch (cause) {
+      if (cause instanceof NoActiveActorRuntimeError) throw new ActorContextUnavailableError(undefined, { cause });
+      throw cause;
+    }
   }
 
   protected get asRef(): ActorSelfRef<Self> {

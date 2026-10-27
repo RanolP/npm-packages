@@ -24,7 +24,15 @@ export type {
   DueActorMessage,
   PendingActorMessage,
 } from "./actor-runtime.js";
-export { ActorRuntimeError, NoActiveActorRuntimeError, NoActiveTransactionError } from "./errors.js";
+export {
+  ActorContextUnavailableError,
+  ActorRuntimeError,
+  ActorTransactionHookError,
+  NoActiveActorRuntimeError,
+  NoActiveTransactionError,
+} from "./errors.js";
+export { ActorInvocationContext } from "./actor-context.js";
+export type { ActorContext, ActorContextProvider, ActorTransactionHooks } from "./actor-context.js";
 export {
   NAMED_ROOT,
   actorHolder,

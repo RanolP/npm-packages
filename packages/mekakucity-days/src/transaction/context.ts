@@ -1,4 +1,4 @@
-import type { HolderOp, TxHold } from "@mekakucity/actors/runtime";
+import type { ActorInvocationContext, HolderOp, TxHold } from "@mekakucity/actors/runtime";
 import type { OutboxMessage, PendingOutboxMessage } from "../outbox/message.js";
 import type { ActorRecord, InMemoryStore } from "../ref/in-memory-store.js";
 import { NoActiveTransactionError } from "@mekakucity/actors";
@@ -22,6 +22,7 @@ export interface ActionFrame {
   readonly root: RootTransaction;
   readonly parent?: ActionFrame;
   readonly chain: Set<string>;
+  readonly invocation: ActorInvocationContext;
   /**
    * The tx holder for refs this call hands to the root: minted per cross-actor call, the same key the DO adapter
    * gets from its caller's callId. A same-actor nested frame shares its parent's key.

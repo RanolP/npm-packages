@@ -1,10 +1,12 @@
-import type { Actor, ActorRef } from "@mekakucity/actors";
+import type { Actor, ActorContextProvider, ActorRef } from "@mekakucity/actors";
 import { ActorRuntime } from "@mekakucity/actors/runtime";
 import { it as vitestIt, type TestContext } from "vitest";
 
 export interface ActorRuntimeConformanceHooks {
   // Lets the runtime suite model a restored reference after its cache entry was finalized.
   readonly evictSnapshotCache?: (ref: ActorRef<Actor<unknown, unknown>>) => void;
+  /** Constructs a runtime with the provider used by the shared actor-context cases. */
+  readonly createWithContext?: (provider: ActorContextProvider) => ActorRuntime;
 }
 
 export const createRuntimeTestTools = (

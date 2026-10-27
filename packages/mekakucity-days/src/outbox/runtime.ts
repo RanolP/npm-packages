@@ -42,7 +42,18 @@ export const enqueueDetached = (
 export const dispatchDetached = async (memory: RuntimeMemory, message: DueOutboxMessage): Promise<void> => {
   const root = newRoot(memory);
   try {
-    await invokeActorAction(memory, root, message.target.id, message.action, [...message.args], undefined, new Set());
+    await invokeActorAction(
+      memory,
+      root,
+      message.target.id,
+      message.action,
+      [...message.args],
+      undefined,
+      new Set(),
+      -1,
+      undefined,
+      message.target,
+    );
     await finishRoot(memory, root, true);
   } catch (error) {
     await finishRoot(memory, root, false);

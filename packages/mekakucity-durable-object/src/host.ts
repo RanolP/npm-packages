@@ -5,8 +5,11 @@ import {
   ActorReentrancyError,
   ActorRuntimeError,
   ActorStateSerializationError,
+  type ActorContextProvider,
+  type ActorDescriptor,
 } from "@mekakucity/actors";
 import {
+  ActorInvocationContext,
   actorHolder,
   applyHolderOp,
   cloneOrThrow,
@@ -167,6 +170,10 @@ export class ActorHost extends DurableObject<Env> {
   /** Callers waiting until every outbox row through `seq` was acked (#awaitDelivered). */
   #deliveryWaiters: { seq: number; resolve: () => void; reject: (error: unknown) => void }[] = [];
 
+  protected get actorContextProvider(): ActorContextProvider | undefined {
+    return undefined;
+  }
+
   get #id(): string {
     return this.ctx.id.toString();
   }
@@ -194,7 +201,7 @@ export class ActorHost extends DurableObject<Env> {
         if (request.named) return viewOf(existing);
         throw new ActorRuntimeError(`Actor ${this.#id} already exists`);
       }
-      const core = createHostRuntimeCore(this.#binding(), request.scope);
+      const core = createHostRuntimeCore(this.#binding(), request.scope, this.actorContextProvider);
       const Type = lookupType(request.type);
       const meta: ActorMeta = { scope: request.scope, type: request.type, named: request.named, input: request.input };
       const actor: HostedActor = {
@@ -251,17 +258,25 @@ export class ActorHost extends DurableObject<Env> {
       if (request.context.chain.includes(actor.id)) throw new ActorReentrancyError(actor.id);
       const root = actor.core.newRoot(false, request.context.rootId, request.context.callId);
       const chain = new Set([...request.context.chain, actor.id]);
-      const result = await this.#withMailbox(async () => {
-        const { value, spawnedIds } = await this.#runTop(
-          actor,
-          root,
-          chain,
-          request.context.parentFrameId,
-          request.action,
-          [...request.args],
-        );
-        return { ...viewOf(actor), value, owned: [...root.owned.values()], spawnedIds, written: this.#outbox.append([]) };
-      });
+      let result: InvokeResult & { written: number };
+      try {
+        result = await this.#withMailbox(async () => {
+          const { value, spawnedIds } = await this.#runTop(
+            actor,
+            root,
+            chain,
+            request.context.parentFrameId,
+            request.action,
+            [...request.args],
+            request.context.carried,
+            request.context.origin,
+          );
+          return { ...viewOf(actor), value, owned: [...root.owned.values()], spawnedIds, written: this.#outbox.append([]) };
+        });
+      } catch (error) {
+        await this.#emit(txReleaseOps(root.owned.values()));
+        throw error;
+      }
       // The caller releases these holds directly once its root ends, so this commit's hold(tx) rows must
       // reach their targets first or a late hold re-adds a holder nobody releases. Waited outside the mailbox:
       // delivery never needs it.
@@ -360,7 +375,7 @@ export class ActorHost extends DurableObject<Env> {
       return undefined;
     }
     for (const [, value] of this.#kv.list<unknown>({ prefix: INBOX_PREFIX })) readStoredInboxMessage(value);
-    const core = createHostRuntimeCore(this.#binding(), meta.scope);
+    const core = createHostRuntimeCore(this.#binding(), meta.scope, this.actorContextProvider);
     const Type = lookupType(meta.type);
     const snapshot = this.#kv.get<StateData>(SNAPSHOT) ?? {};
     const actor: HostedActor = {
@@ -406,13 +421,26 @@ export class ActorHost extends DurableObject<Env> {
 
   // ---- frames --------------------------------------------------------------
 
-  #makeFrame(actor: HostedActor, root: RootTransaction, parent: ActionFrame | undefined, chain: Set<string>): ActionFrame {
+  #makeFrame(
+    actor: HostedActor,
+    root: RootTransaction,
+    parent: ActionFrame | undefined,
+    chain: Set<string>,
+    carried: unknown,
+    origin?: ActorDescriptor,
+  ): ActionFrame {
     const state = cloneState(actor);
     return {
       id: `frame_${crypto.randomUUID()}`,
       root,
       parent,
       chain,
+      invocation: new ActorInvocationContext(
+        carried,
+        actor.core.contextProvider,
+        { type: actor.meta.type, id: actor.id },
+        origin,
+      ),
       startVersion: actor.version,
       initialState: structuredClone(state),
       baseline: state,
@@ -443,14 +471,17 @@ export class ActorHost extends DurableObject<Env> {
     parentFrameId: string | undefined,
     actionName: string,
     args: unknown[],
+    carried: unknown,
+    origin?: ActorDescriptor,
     options: { holdResult: boolean; settleInbox?: InboxEntry } = { holdResult: true },
   ): Promise<{ value: unknown; spawnedIds: string[] }> {
     const { core } = actor;
     const method = metadataFor(actor.instance).actions.get(actionName);
     if (!method) return Promise.reject(new ActorRuntimeError(`Unknown actor action ${actionName}`));
-    const frame = this.#makeFrame(actor, root, undefined, chain);
+    const frame = this.#makeFrame(actor, root, undefined, chain, carried, origin);
     const { settleInbox } = options;
-    return core.enter(() => core.execution.run({ root, frame, chain }, async () => {
+    return core.enter(() => core.execution.run({ root, frame, chain, carried }, async () => {
+      let result: { value: unknown; spawnedIds: string[] };
       try {
         const callArgs = core.hydrate(structuredClone(args));
         const value = core.cloneResult(actor.id, actionName, await method.apply(actor.instance, callArgs));
@@ -462,32 +493,52 @@ export class ActorHost extends DurableObject<Env> {
           messages: frame.outbox.splice(0),
           inTransaction: settleInbox && (() => this.#settleInbox(settleInbox, root)),
         });
-        return { value, spawnedIds: parentFrameId ? [...frame.spawnedIds] : [] };
+        result = { value, spawnedIds: parentFrameId ? [...frame.spawnedIds] : [] };
       } catch (error) {
         await this.#rollback(actor, frame, [...discardSpawnOps(frame.spawnedIds, frame.id), ...frame.outbox.flatMap((message) => messageReleaseOps(message))]);
+        await frame.invocation.afterRollback(error);
         throw error;
       }
+      /** Committed hooks are not durable; isolate failure after commit can skip them, so they are at-most-once. */
+      try {
+        await frame.invocation.afterCommit();
+      } catch (error) {
+        if (parentFrameId !== undefined) {
+          await this.#emit(result.spawnedIds.map((target): HolderOp => ({
+            kind: "release",
+            target,
+            holder: frameHolder(parentFrameId),
+          })));
+        }
+        throw error;
+      }
+      return result;
     }));
   }
 
   /** A same-actor call (local action or own ref) runs as a child frame that merges into its parent on success. */
   #runNested(actor: HostedActor, parent: ActionFrame, actionName: string, run: () => unknown): Promise<unknown> {
     const { core } = actor;
-    const frame = this.#makeFrame(actor, parent.root, parent, new Set(parent.chain));
-    return core.execution.run({ root: frame.root, frame, chain: frame.chain }, async () => {
+    const carried = parent.invocation.carried;
+    const origin = parent.invocation.origin;
+    const frame = this.#makeFrame(actor, parent.root, parent, new Set(parent.chain), carried, origin);
+    return core.execution.run({ root: frame.root, frame, chain: frame.chain, carried }, async () => {
+      let result: unknown;
       try {
-        const value = core.cloneResult(actor.id, actionName, await run());
-        const holds = this.#holdForTx(actor, frame.root, value);
+        result = core.cloneResult(actor.id, actionName, await run());
+        const holds = this.#holdForTx(actor, frame.root, result);
         parent.pendingOps.push(...frame.pendingOps);
         parent.outbox.push(...frame.outbox);
         const spawns = settleSpawnOps(frame.spawnedIds, frame.id, parent.id);
         for (const id of frame.spawnedIds) parent.spawnedIds.add(id);
         await this.#emit([...holds, ...spawns]);
-        return core.hydrate(value);
       } catch (error) {
         await this.#rollback(actor, frame, [...discardSpawnOps(frame.spawnedIds, frame.id), ...frame.outbox.flatMap((message) => messageReleaseOps(message))]);
+        await frame.invocation.afterRollback(error);
         throw error;
       }
+      frame.invocation.mergeHooksInto(parent.invocation);
+      return core.hydrate(result);
     });
   }
 
@@ -843,6 +894,8 @@ export class ActorHost extends DurableObject<Env> {
           // Nobody receives a detached action's result, so it is not held for the root.
           await this.#withMailbox(() => this.#runTop(
             actor, root, new Set([actor.id]), undefined, message.action, [...message.args],
+            undefined,
+            message.target,
             { holdResult: false, settleInbox: inbox },
           ));
         } catch {
@@ -867,3 +920,14 @@ const viewOf = (actor: HostedActor): ActorView => ({
   version: actor.version,
   snapshot: actor.snapshot,
 });
+
+export interface ActorHostOptions {
+  readonly contextProvider: ActorContextProvider;
+}
+
+/** Creates the Durable Object class that rebuilds application context inside each ActorHost isolate. */
+export const createActorHost = (options: ActorHostOptions): typeof ActorHost => class extends ActorHost {
+  protected override get actorContextProvider(): ActorContextProvider {
+    return options.contextProvider;
+  }
+};

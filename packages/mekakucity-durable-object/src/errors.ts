@@ -1,22 +1,26 @@
 import {
+  ActorContextUnavailableError,
   ActorKilledError,
   ActorReentrancyError,
   ActorResultSerializationError,
   ActorRuntimeError,
   ActorSnapshotUnavailableError,
   ActorStateSerializationError,
+  ActorTransactionHookError,
   NoActiveActorRuntimeError,
   NoActiveTransactionError,
 } from "@mekakucity/actors";
 import type { Outcome, WireError } from "./protocol.js";
 
 const knownErrors: Record<string, Function> = {
+  ActorContextUnavailableError,
   ActorKilledError,
   ActorReentrancyError,
   ActorResultSerializationError,
   ActorRuntimeError,
   ActorSnapshotUnavailableError,
   ActorStateSerializationError,
+  ActorTransactionHookError,
   NoActiveActorRuntimeError,
   NoActiveTransactionError,
 };

@@ -15,26 +15,37 @@ export const invokeNested = async (
   _args: unknown[],
   run: () => unknown,
 ): Promise<unknown> => {
-  const frame = makeFrame(memory, parent.record, parent.root, parent, new Set(parent.chain));
+  const frame = makeFrame(
+    memory,
+    parent.record,
+    parent.root,
+    parent,
+    new Set(parent.chain),
+    parent.invocation.carried,
+    parent.invocation.origin,
+  );
   return memory.execution.run(
     { root: frame.root, frame, chain: frame.chain },
     async () => {
+      let value: unknown;
       try {
-        const value = cloneActionResult(memory, frame.record, actionName, await run());
+        value = cloneActionResult(memory, frame.record, actionName, await run());
         for (const id of collectRefs(memory, value)) {
           holdForTx(frame, id);
         }
         mergeFrame(memory, frame);
         settleFrameSpawns(frame);
         await drainHolderOps(frame.root);
-        return hydrateRefs(memory, value);
       } catch (error) {
         await rollbackAction(memory, frame);
         discardFrameSpawns(frame);
         rollbackOutbox(frame.root, frame.outbox);
         await drainHolderOps(frame.root);
+        await frame.invocation.afterRollback(error);
         throw error;
       }
+      frame.invocation.mergeHooksInto(parent.invocation);
+      return hydrateRefs(memory, value);
     },
   );
 };
