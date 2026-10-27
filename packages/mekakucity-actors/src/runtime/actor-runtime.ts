@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Actor } from "../core/actor.js";
 import type { ActorInput, ActorRef, ActorRefInit } from "../ref/types.js";
 import { ActorRuntimeError, NoActiveActorRuntimeError } from "./errors.js";
-import type { ActorContext } from "./actor-context.js";
+import type { ActorCommitInfo, ActorCommitListener, ActorContext } from "./actor-context.js";
 
 export type ActorConstructor<T extends Actor<unknown, unknown>> = new (input: ActorInput<T>) => T;
 
@@ -54,6 +54,8 @@ const activeRuntime = new AsyncLocalStorage<ActorRuntime>();
 const activeReadObservers = new AsyncLocalStorage<readonly ActorReadObserver[]>();
 
 export abstract class ActorRuntime {
+  readonly #commitListeners = new Set<ActorCommitListener>();
+
   protected withActiveRuntime<Result>(work: () => Result): Result {
     return activeRuntime.run(this, work);
   }
@@ -69,9 +71,34 @@ export abstract class ActorRuntime {
     return activeReadObservers.run(observers, work);
   }
 
+  protected withoutReadObservers<Result>(work: () => Result): Result {
+    return activeReadObservers.exit(work);
+  }
+
   protected observeRead(actor: ActorDescriptor, version: number | undefined): void {
     const descriptor = { type: actor.type, id: actor.id };
     for (const observer of activeReadObservers.getStore() ?? []) observer({ actor: descriptor, version });
+  }
+
+  /**
+   * Subscribes to versions persisted by actors hosted in this runtime's isolate.
+   * Invocation is synchronous, best-effort, and at most once. Returned promises are not awaited.
+   * Listener throws and rejections do not fail the action.
+   */
+  onCommit(listener: ActorCommitListener): () => void {
+    this.#commitListeners.add(listener);
+    return () => this.#commitListeners.delete(listener);
+  }
+
+  protected emitCommit(info: ActorCommitInfo): void {
+    for (const listener of this.#commitListeners) {
+      try {
+        const result: unknown = listener(info);
+        if (result instanceof Promise) result.catch(() => {});
+      } catch {
+        // Commit listeners observe persisted state and cannot roll it back.
+      }
+    }
   }
 
   abstract run<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>>;

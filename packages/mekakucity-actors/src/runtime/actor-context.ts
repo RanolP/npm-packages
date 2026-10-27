@@ -12,6 +12,8 @@ export interface ActorCommitInfo {
 
 export type ActorAfterCommitHook = (info: ActorCommitInfo) => void | Promise<void>;
 
+export type ActorCommitListener = (info: ActorCommitInfo) => void | Promise<void>;
+
 export interface ActorAfterCommit {
   (fn: ActorAfterCommitHook): void;
   /** Explicit alias for the at-most-once delivery semantics of after-commit hooks. */

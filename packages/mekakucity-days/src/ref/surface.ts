@@ -63,12 +63,12 @@ export const collectRefs = (
 export const refreshActorValues = async <T extends Actor<unknown, unknown>>(
   memory: RuntimeMemory,
   ref: ActorRef<T> | ActorDescriptor,
-): Promise<ActorRef<T>> => {
+): Promise<{ ref: ActorRef<T>; version: number }> => {
   const context = currentExecution(memory, "Actor.refreshValues");
   if (context.frame) await commitSegment(memory, context.frame, false, true);
   const normalized = ensureRef<T>(memory, ref);
   const record = await context.root.backend.route(normalized.id);
   if (!record) throw new ActorKilledError(normalized.id);
   cacheBackendSnapshot(memory, record);
-  return normalized;
+  return { ref: normalized, version: record.version };
 };

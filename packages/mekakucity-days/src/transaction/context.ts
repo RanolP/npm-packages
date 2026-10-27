@@ -33,7 +33,8 @@ export interface ActionFrame {
   readonly spawnedIds: Set<string>;
   readonly outbox: PendingOutboxMessage[];
   readonly pendingOps: HolderOp[];
-  baseline: StateData;
+  readonly changed: Set<string>;
+  readonly segment: { baseline: StateData };
 }
 
 export interface ExecutionContext {

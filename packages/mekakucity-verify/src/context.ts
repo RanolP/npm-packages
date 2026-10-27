@@ -110,6 +110,14 @@ class ContextHooks extends Actor<ContextHooks, {}> {
     this.ctx.reportCommitInfo();
   }
 
+  @action async reportWriteCallRevert(target: ActorRef<ContextProbe>): Promise<void> {
+    const previous = this.committed;
+    this.committed = 5;
+    await target.read();
+    this.committed = previous;
+    this.ctx.reportCommitInfo();
+  }
+
   @action async reportRollback(): Promise<void> {
     this.committed = 4;
     this.ctx.reportCommitInfo();
@@ -121,7 +129,26 @@ const commitInfoFrom = (error: Error): ActorCommitInfo => {
   const marker = "commit-info:";
   const start = error.message.indexOf(marker);
   if (start < 0) throw error;
-  return JSON.parse(error.message.slice(start + marker.length)) as ActorCommitInfo;
+  const parsed: unknown = JSON.parse(error.message.slice(start + marker.length));
+  if (typeof parsed !== "object" || parsed === null
+    || !("actor" in parsed) || typeof parsed.actor !== "object" || parsed.actor === null
+    || !("type" in parsed.actor) || typeof parsed.actor.type !== "string"
+    || !("id" in parsed.actor) || typeof parsed.actor.id !== "string"
+    || !("version" in parsed) || typeof parsed.version !== "number"
+    || !("changed" in parsed) || !Array.isArray(parsed.changed)
+    || !parsed.changed.every((key) => typeof key === "string")) {
+    throw new TypeError("Expected a serialized ActorCommitInfo");
+  }
+  return {
+    actor: { type: parsed.actor.type, id: parsed.actor.id },
+    version: parsed.version,
+    changed: [...parsed.changed],
+  };
+};
+
+const errorFrom = (error: unknown): Error => {
+  if (error instanceof Error) return error;
+  throw new TypeError(`Expected an Error, received ${String(error)}`);
 };
 
 export const actorContextSuite = (
@@ -129,7 +156,11 @@ export const actorContextSuite = (
   hooks?: ActorRuntimeConformanceHooks,
 ): void => {
   describe("@mekakucity/actors context", () => {
-    const contextIt = hooks?.createWithContext ? it : it.skip;
+    const configuredCreateWithContext = hooks?.createWithContext;
+    const contextIt = configuredCreateWithContext ? it : it.skip;
+    const createWithContext = configuredCreateWithContext ?? (() => {
+      throw new Error("This runtime does not provide context conformance support");
+    });
 
     contextIt("isolates sequential calls from different callers", async () => {
       let current: ContextCarried | undefined;
@@ -137,7 +168,7 @@ export const actorContextSuite = (
         carry: () => current,
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       await runtime.run(async () => {
         const ref = await Actor.spawn(ContextProbe, {});
         current = { requestId: "first" };
@@ -157,7 +188,7 @@ export const actorContextSuite = (
         },
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       await runtime.run(async () => {
         const target = await Actor.spawn(ContextProbe, {});
         const forwarder = await Actor.spawn(ContextForwarder, { target });
@@ -171,12 +202,12 @@ export const actorContextSuite = (
         carry: () => ({ requestId: "hooks" }),
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       await runtime.run(async () => {
         const ref = await Actor.spawn(ContextHooks, {});
         const commitError = await ref.succeed().then(
           () => { throw new Error("Expected afterCommit to reject"); },
-          (error: unknown) => error as Error,
+          errorFrom,
         );
         expect(commitError.message).toContain("afterCommit hook ran");
         expect(commitError.message).not.toContain("rollback hook ran");
@@ -185,7 +216,7 @@ export const actorContextSuite = (
 
         const rollbackError = await ref.fail().then(
           () => { throw new Error("Expected the action to reject"); },
-          (error: unknown) => error as Error,
+          errorFrom,
         );
         expect(rollbackError.message).toMatch(/action failed.*rollback hook ran/);
         expect(rollbackError.message).not.toContain("afterCommit hook ran");
@@ -199,26 +230,33 @@ export const actorContextSuite = (
         carry: () => ({ requestId: "commit-info" }),
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       await runtime.run(async () => {
         const ref = await Actor.spawn(ContextHooks, {});
         const actor = { type: ref.type, id: ref.id };
 
         const noopError = await ref.reportNoop().then(
           () => { throw new Error("Expected afterCommit to reject"); },
-          (error: unknown) => error as Error,
+          errorFrom,
         );
         expect(commitInfoFrom(noopError)).toEqual({ actor, version: 1, changed: [] });
 
         const writeError = await ref.reportWrite().then(
           () => { throw new Error("Expected afterCommit to reject"); },
-          (error: unknown) => error as Error,
+          errorFrom,
         );
         expect(commitInfoFrom(writeError)).toEqual({ actor, version: 2, changed: ["committed"] });
 
+        const target = await Actor.spawn(ContextProbe, {});
+        const revertedError = await ref.reportWriteCallRevert(target).then(
+          () => { throw new Error("Expected afterCommit to reject"); },
+          errorFrom,
+        );
+        expect(commitInfoFrom(revertedError)).toEqual({ actor, version: 4, changed: ["committed"] });
+
         const rollbackError = await ref.reportRollback().then(
           () => { throw new Error("Expected the action to reject"); },
-          (error: unknown) => error as Error,
+          errorFrom,
         );
         expect(rollbackError.message).toContain("reported action failed");
         expect(rollbackError.message).not.toContain("commit-info:");
@@ -230,7 +268,7 @@ export const actorContextSuite = (
         carry: () => ({ requestId: "caller" }),
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       const target = await runtime.run(async () => {
         const ref = await Actor.ofNamed(ContextProbe, "detached-target").orSpawn(() => ({}));
         await ref.queueDetached(ref);
@@ -257,7 +295,7 @@ export const actorContextSuite = (
         carry: () => ({ requestId: "caller" }),
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       const { target, forwarder } = await runtime.run(async () => {
         const target = await Actor.ofNamed(ContextProbe, "origin-target").orSpawn(() => ({}));
         const forwarder = await Actor.ofNamed(ContextForwarder, "origin-forwarder").orSpawn(() => ({ target }));

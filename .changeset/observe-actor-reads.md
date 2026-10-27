@@ -5,4 +5,4 @@
 "@mekakucity/verify": minor
 ---
 
-Add actor read observation scopes and include the committed actor, version, and changed state fields in after-commit hooks across both runtimes and their conformance suite.
+Add actor read observation scopes, include the committed actor, version, and accumulated changed state fields in after-commit hooks, and expose a best-effort runtime commit feed for every persisted action version across both runtimes and their conformance suite.

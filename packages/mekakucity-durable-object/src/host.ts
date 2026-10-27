@@ -5,6 +5,7 @@ import {
   ActorRuntimeError,
   ActorStateSerializationError,
   type ActorContextProvider,
+  type ActorCommitListener,
   type ActorDescriptor,
 } from "@mekakucity/actors";
 import {
@@ -174,6 +175,10 @@ export class ActorHost extends DurableObject<Env> {
     return undefined;
   }
 
+  protected get actorCommitListener(): ActorCommitListener | undefined {
+    return undefined;
+  }
+
   get #id(): string {
     return this.ctx.id.toString();
   }
@@ -201,7 +206,12 @@ export class ActorHost extends DurableObject<Env> {
         if (request.named) return viewOf(existing);
         throw new ActorRuntimeError(`Actor ${this.#id} already exists`);
       }
-      const core = createHostRuntimeCore(this.#binding(), request.scope, this.actorContextProvider);
+      const core = createHostRuntimeCore(
+        this.#binding(),
+        request.scope,
+        this.actorContextProvider,
+        this.actorCommitListener,
+      );
       const Type = lookupType(request.type);
       const meta: ActorMeta = { scope: request.scope, type: request.type, named: request.named, input: request.input };
       const actor: HostedActor = {
@@ -375,7 +385,7 @@ export class ActorHost extends DurableObject<Env> {
       return undefined;
     }
     for (const [, value] of this.#kv.list<unknown>({ prefix: INBOX_PREFIX })) readStoredInboxMessage(value);
-    const core = createHostRuntimeCore(this.#binding(), meta.scope, this.actorContextProvider);
+    const core = createHostRuntimeCore(this.#binding(), meta.scope, this.actorContextProvider, this.actorCommitListener);
     const Type = lookupType(meta.type);
     const snapshot = this.#kv.get<StateData>(SNAPSHOT) ?? {};
     const actor: HostedActor = {
@@ -443,10 +453,13 @@ export class ActorHost extends DurableObject<Env> {
       ),
       startVersion: actor.version,
       initialState: structuredClone(state),
-      baseline: state,
+      segment: parent?.segment.actorId === actor.id
+        ? parent.segment
+        : { actorId: actor.id, baseline: state },
       spawnedIds: new Set(),
       outbox: [],
       pendingOps: [],
+      changed: new Set(),
     };
   }
 
@@ -501,12 +514,7 @@ export class ActorHost extends DurableObject<Env> {
       }
       /** Committed hooks are not durable; isolate failure after commit can skip them, so they are at-most-once. */
       try {
-        const changed = Object.keys(changedStateFields(
-          frame.initialState,
-          cloneState(actor),
-          actor,
-        ));
-        await frame.invocation.afterCommit(actor.version, changed);
+        await frame.invocation.afterCommit(actor.version, [...frame.changed]);
       } catch (error) {
         if (parentFrameId !== undefined) {
           await this.#emit(result.spawnedIds.map((target): HolderOp => ({
@@ -534,11 +542,13 @@ export class ActorHost extends DurableObject<Env> {
         const holds = this.#holdForTx(actor, frame.root, result);
         parent.pendingOps.push(...frame.pendingOps);
         parent.outbox.push(...frame.outbox);
+        for (const key of frame.changed) parent.changed.add(key);
         const spawns = settleSpawnOps(frame.spawnedIds, frame.id, parent.id);
         for (const id of frame.spawnedIds) parent.spawnedIds.add(id);
         await this.#emit([...holds, ...spawns]);
       } catch (error) {
         await this.#rollback(actor, frame, [...discardSpawnOps(frame.spawnedIds, frame.id), ...frame.outbox.flatMap((message) => messageReleaseOps(message))]);
+        for (const key of frame.changed) parent.changed.add(key);
         await frame.invocation.afterRollback(error);
         throw error;
       }
@@ -566,7 +576,7 @@ export class ActorHost extends DurableObject<Env> {
     },
   ): Promise<void> {
     const next = createSnapshot(actor);
-    const changed = Object.keys(changedStateFields(frame.baseline, next.state, actor));
+    const changed = Object.keys(changedStateFields(frame.segment.baseline, next.state, actor));
     if (!options.force && changed.length === 0) return;
     const { root } = frame;
     const version = actor.version + 1;
@@ -583,10 +593,12 @@ export class ActorHost extends DurableObject<Env> {
       this.#outbox.append(ops, messages);
       options.inTransaction?.();
     });
+    for (const key of changed) frame.changed.add(key);
     actor.snapshot = next.data;
     actor.version = version;
     actor.heldRefs = heldRefs;
-    frame.baseline = next.state;
+    frame.segment.baseline = next.state;
+    actor.core.commit({ actor: { type: actor.meta.type, id: actor.id }, version, changed });
     await this.#afterWrite();
   }
 
@@ -598,6 +610,7 @@ export class ActorHost extends DurableObject<Env> {
       return;
     }
     const restored = createSnapshot(actor);
+    const changed = Object.keys(changedStateFields(frame.segment.baseline, restored.state, actor));
     const version = actor.version + 1;
     const data = cloneOrThrow(restored.data, (cause) => new ActorStateSerializationError(actor.id, cause));
     const heldRefs = this.#stateRefs(actor, restored.state);
@@ -611,7 +624,8 @@ export class ActorHost extends DurableObject<Env> {
     actor.snapshot = data;
     actor.version = version;
     actor.heldRefs = heldRefs;
-    frame.baseline = restored.state;
+    frame.segment.baseline = restored.state;
+    actor.core.commit({ actor: { type: actor.meta.type, id: actor.id }, version, changed });
     await this.#afterWrite();
   }
 
@@ -927,12 +941,16 @@ const viewOf = (actor: HostedActor): ActorView => ({
 });
 
 export interface ActorHostOptions {
-  readonly contextProvider: ActorContextProvider;
+  readonly contextProvider?: ActorContextProvider;
+  readonly onCommit?: ActorCommitListener;
 }
 
 /** Creates the Durable Object class that rebuilds application context inside each ActorHost isolate. */
 export const createActorHost = (options: ActorHostOptions): typeof ActorHost => class extends ActorHost {
-  protected override get actorContextProvider(): ActorContextProvider {
+  protected override get actorContextProvider(): ActorContextProvider | undefined {
     return options.contextProvider;
+  }
+  protected override get actorCommitListener(): ActorCommitListener | undefined {
+    return options.onCommit;
   }
 };

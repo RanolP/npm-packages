@@ -38,6 +38,7 @@ export const invokeNested = async (
         await drainHolderOps(frame.root);
       } catch (error) {
         await rollbackAction(memory, frame);
+        for (const key of frame.changed) parent.changed.add(key);
         discardFrameSpawns(frame);
         rollbackOutbox(frame.root, frame.outbox);
         await drainHolderOps(frame.root);

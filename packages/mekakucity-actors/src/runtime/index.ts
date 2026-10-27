@@ -38,6 +38,7 @@ export type {
   ActorAfterCommit,
   ActorAfterCommitHook,
   ActorCommitInfo,
+  ActorCommitListener,
   ActorContext,
   ActorContextProvider,
   ActorTransactionHooks,
