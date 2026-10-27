@@ -125,11 +125,12 @@ describe("ActorHost holder protocol", () => {
       void instance.applyHolderOps([]);
     });
 
+    // 200 filler deliveries drain one by one; slow CI runners exceed the default 5s test timeout.
     const child = await runtime.run(() => spawner.makeChild());
     for (let i = 0; i < 1_000 && (await outboxSize(spawner)) > 0; i += 1) await new Promise((r) => setTimeout(r, 5));
     expect(await outboxSize(spawner)).toBe(0);
     await expect(runtime.run(() => child.ping())).rejects.toBeInstanceOf(ActorKilledError);
-  });
+  }, 30_000);
 
   // Regression (review F4): a sender that lost deliverMessage's ack redelivers the row after the action already
   // ran and its inbox key was deleted; without the sender watermark the detached action ran twice.
