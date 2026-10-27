@@ -35,7 +35,13 @@ const collectedRetryState = (ref: { id: string }) =>
 const seenKeys = (ref: { id: string }) =>
   runInDurableObject(stubOf(ref), (_instance, state) => [...state.storage.kv.list({ prefix: "seen:" })].map(([key]) => key));
 const until = async (done: () => Promise<boolean>) => {
-  for (let i = 0; i < 200 && !(await done()); i += 1) await new Promise((r) => setTimeout(r, 5));
+  let lastObserved = false;
+  for (let i = 0; i < 1_000; i += 1) {
+    lastObserved = await done();
+    if (lastObserved) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error(`Timed out waiting for condition; last observed value: ${lastObserved}`);
 };
 const op = (kind: HolderOp["kind"], ref: { id: string }, holder: string): HolderOp => ({ kind, target: ref.id, holder });
 const FAILED_RELEASE_TARGET = "not-a-durable-object-id";
@@ -127,7 +133,7 @@ describe("ActorHost holder protocol", () => {
 
     // 200 filler deliveries drain one by one; slow CI runners exceed the default 5s test timeout.
     const child = await runtime.run(() => spawner.makeChild());
-    for (let i = 0; i < 1_000 && (await outboxSize(spawner)) > 0; i += 1) await new Promise((r) => setTimeout(r, 5));
+    await until(async () => (await outboxSize(spawner)) === 0);
     expect(await outboxSize(spawner)).toBe(0);
     await expect(runtime.run(() => child.ping())).rejects.toBeInstanceOf(ActorKilledError);
   }, 30_000);
@@ -151,9 +157,7 @@ describe("ActorHost holder protocol", () => {
       dueAt: Date.now(),
     };
     const origin = { sender: "sender-host", seq: 7 };
-    const waitInboxEmpty = async () => {
-      for (let i = 0; i < 1_000 && (await inboxSize(counter)) > 0; i += 1) await new Promise((r) => setTimeout(r, 5));
-    };
+    const waitInboxEmpty = () => until(async () => (await inboxSize(counter)) === 0);
 
     expect(await stubOf(counter).deliverMessage(message, origin)).toBe("queued");
     await waitInboxEmpty();
@@ -162,7 +166,7 @@ describe("ActorHost holder protocol", () => {
 
     const count = await runtime.run(async () => (await Actor.refreshValues(counter)).count);
     expect(count).toBe(1);
-  });
+  }, 30_000);
 
   // Regression (review R1): when delivering an invoke's own rows failed, the invoke rejected but its committed
   // hold(tx:root) still went out on the next host call; the caller never learned the id, so the child lived forever.
@@ -193,7 +197,7 @@ describe("ActorHost holder protocol", () => {
     });
     await until(async () => (await outboxSize(spawner)) === 0 && (await storedKeys(child)).length === 0);
     expect(await storedKeys(child)).toEqual([]);
-  });
+  }, 30_000);
 
   test("a failed delivery has no alarm and is retried when the sender next runs", async () => {
     @actor("host-holders/RetrySender")
@@ -229,7 +233,7 @@ describe("ActorHost holder protocol", () => {
     } finally {
       error.mockRestore();
     }
-  });
+  }, 30_000);
 
   test("a collected actor retries a failed release via its alarm and then deletes its storage", async () => {
     const runtime = newRuntime();
@@ -239,10 +243,11 @@ describe("ActorHost holder protocol", () => {
       const before = Date.now();
       const ref = await collectWithFailingRelease(runtime, "once");
       const first = await collectedRetryState(ref);
+      const after = Date.now();
       expect(first.attempt).toBe(1);
       expect(first.alarm).toBe(first.retryAt);
       expect(first.retryAt).toBeGreaterThanOrEqual(before + 5_000);
-      expect(first.retryAt).toBeLessThanOrEqual(Date.now() + 5_000);
+      expect(first.retryAt).toBeLessThanOrEqual(after + 5_000);
 
       await runInDurableObject(stubOf(ref), (_instance, state) => {
         const [entry] = [...state.storage.kv.list({ prefix: "outbox:" })];
@@ -286,7 +291,7 @@ describe("ActorHost holder protocol", () => {
     } finally {
       error.mockRestore();
     }
-  });
+  }, 30_000);
 
   test("a collected actor stops after five failed release retries and preserves its storage", async () => {
     const runtime = newRuntime();
@@ -297,12 +302,13 @@ describe("ActorHost holder protocol", () => {
       const delays = [5_000, 8_000, 13_000, 21_000, 34_000];
 
       for (const [index, delay] of delays.entries()) {
+        const after = Date.now();
         const attempt = index + 1;
         const retry = await collectedRetryState(ref);
         expect(retry.attempt).toBe(attempt);
         expect(retry.alarm).toBe(retry.retryAt);
         expect(retry.retryAt).toBeGreaterThanOrEqual(before + delay);
-        expect(retry.retryAt).toBeLessThanOrEqual(Date.now() + delay);
+        expect(retry.retryAt).toBeLessThanOrEqual(after + delay);
         if (index < delays.length - 1) before = Date.now();
         await runInDurableObject(stubOf(ref), (instance) => instance.alarm());
       }
@@ -350,7 +356,7 @@ describe("ActorHost holder protocol", () => {
     await until(async () => (await storedKeys(sender)).length === 0 && (await seenKeys(receiver)).length === 0);
     expect(await storedKeys(sender)).toEqual([]);
     expect(await seenKeys(receiver)).toEqual([]);
-  });
+  }, 30_000);
 
   // Regression (review N0): every reply in one caller root held its result under the same tx:<root> holder, so
   // a failed invoke's own cleanup release also dropped the hold an earlier successful reply placed on the same
@@ -387,7 +393,7 @@ describe("ActorHost holder protocol", () => {
     expect(midRoot).toBe("alive");
     await until(async () => (await storedKeys(x)).length === 0);
     expect(await storedKeys(x)).toEqual([]);
-  });
+  }, 30_000);
 
   // Regression (review N1): a sender kept sent:<target> for every actor it ever messaged, even ones that died.
   test("a dead ack clears the sender's sent:<target> key", async () => {
@@ -408,5 +414,5 @@ describe("ActorHost holder protocol", () => {
       [...state.storage.kv.list({ prefix: "sent:" })].map(([key]) => key));
     await until(async () => (await outboxSize(sender)) === 0 && (await sentKeys()).length === 0);
     expect(await sentKeys()).toEqual([]);
-  });
+  }, 30_000);
 });

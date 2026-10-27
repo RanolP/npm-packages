@@ -291,59 +291,56 @@ describe('AsyncIterator', () => {
     });
 
     it('should demonstrate current sequential behavior of async operations', async () => {
-      const timeouts = [100, 200, 300]; // timeouts in milliseconds
-      const sumTimeout = timeouts.reduce((a, b) => a + b, 0); // sum = 600ms
-      const delta = 200; // 200ms delta for timing tolerance
+      const values = [100, 200, 300];
+      const started = values.map(() => Promise.withResolvers<void>());
+      const releases = values.map(() => Promise.withResolvers<void>());
+      const startedValues: number[] = [];
 
-      const startTime = Date.now();
-
-      // Current AsyncIterator behavior - operations run sequentially
-      const iter = AsyncIterator.from(timeouts);
-      const result = await iter
-        .parallel(10) // High parallel limit doesn't help with async operations in flatMap
-        .flatMap(async function* (ms) {
-          await new Promise(resolve => setTimeout(resolve, ms));
-          yield ms;
+      const resultPromise = AsyncIterator.from(values)
+        .parallel(10)
+        .flatMap(async function* (value) {
+          const index = values.indexOf(value);
+          startedValues.push(value);
+          started[index]!.resolve();
+          await releases[index]!.promise;
+          yield value;
         })
         .toArray();
 
-      const endTime = Date.now();
-      const actualDuration = endTime - startTime;
+      await started[0]!.promise;
+      // Let an eagerly scheduled next start run before checking that it has not started.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(startedValues).toEqual([100]);
+      releases[0]!.resolve();
+      await started[1]!.promise;
+      // Let an eagerly scheduled next start run before checking that it has not started.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(startedValues).toEqual([100, 200]);
+      releases[1]!.resolve();
+      await started[2]!.promise;
+      expect(startedValues).toEqual([100, 200, 300]);
+      releases[2]!.resolve();
 
-      // Verify that all operations completed
+      const result = await resultPromise;
       expect(result).toEqual([100, 200, 300]);
+    });
 
-      // Current behavior: execution time is approximately sum of timeouts (sequential)
-      expect(actualDuration).toBeGreaterThan(sumTimeout - 100);
-      expect(actualDuration).toBeLessThan(sumTimeout + delta);
-    }, 2000);
+    it('should start Promise.all operations in parallel before any completes', async () => {
+      const values = [100, 200, 300, 400, 500];
+      const releases = values.map(() => Promise.withResolvers<void>());
+      const startedValues: number[] = [];
+      const promises = values.map(async (value, index) => {
+        startedValues.push(value);
+        await releases[index]!.promise;
+        return value;
+      });
 
-    it('should run setTimeout operations in parallel within max timeout + delta (Promise.all baseline)', async () => {
-      const timeouts = [100, 200, 300, 400, 500]; // timeouts in milliseconds
-      const maxTimeout = Math.max(...timeouts); // max timeout in ms
-      const delta = 200; // 200ms delta for timing tolerance
-
-      const startTime = Date.now();
-
-      // Test using Promise.all to demonstrate expected parallel behavior
-      const promises = timeouts.map(ms =>
-        new Promise<number>(resolve =>
-          setTimeout(() => resolve(ms), ms)
-        )
-      );
+      expect(startedValues).toEqual(values);
+      for (const release of releases) release.resolve();
       const result = await Promise.all(promises);
 
-      const endTime = Date.now();
-      const actualDuration = endTime - startTime;
-
-      // Verify that all operations completed
       expect(result.sort()).toEqual([100, 200, 300, 400, 500]);
-
-      // Verify that execution time is approximately max timeout, not sum of timeouts
-      // Sum would be 1500ms, but with parallelism it should be ~500ms
-      expect(actualDuration).toBeLessThan(maxTimeout + delta);
-      expect(actualDuration).toBeGreaterThan(maxTimeout - delta);
-    }, 2000);
+    });
   });
 
   describe('async callbacks', () => {
