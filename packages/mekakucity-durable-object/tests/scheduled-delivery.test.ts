@@ -22,12 +22,17 @@ test("a scheduled message survives target Durable Object restart", async () => {
   });
 
   await runInDurableObject(stubOf(target), (_instance, state) => state.abort()).catch(() => {});
-  await new Promise((resolve) => setTimeout(resolve, 150));
-
-  await runtime.run(async () => {
-    await Actor.refreshValues(target);
-    expect(target.received).toBe(1);
-  });
+  const deadline = Date.now() + 5_000;
+  let received = 0;
+  while (received !== 1 && Date.now() < deadline) {
+    received = await runtime.run(async () => {
+      await Actor.refreshValues(target);
+      return target.received;
+    });
+    if (received !== 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  if (received !== 1) throw new Error(`Timed out waiting for scheduled delivery; last received value: ${received}`);
+  expect(received).toBe(1);
 });
 
 test("a busy inbox dispatch uses five persisted backstop alarms without a tight loop", async () => {

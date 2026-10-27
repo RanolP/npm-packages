@@ -235,11 +235,13 @@ describe("ActorHost holder protocol", () => {
     const target = await runtime.run(() => Actor.ofNamed(Probe, "collected-retry-target").orSpawn(() => ({})));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
+      const before = Date.now();
       const ref = await collectWithFailingRelease(runtime, "once");
       const first = await collectedRetryState(ref);
       expect(first.attempt).toBe(1);
       expect(first.alarm).toBe(first.retryAt);
-      expect(first.retryAt).toBeGreaterThanOrEqual(Date.now() + 4_900);
+      expect(first.retryAt).toBeGreaterThanOrEqual(before + 5_000);
+      expect(first.retryAt).toBeLessThanOrEqual(Date.now() + 5_000);
 
       await runInDurableObject(stubOf(ref), (_instance, state) => {
         const [entry] = [...state.storage.kv.list({ prefix: "outbox:" })];
@@ -289,6 +291,7 @@ describe("ActorHost holder protocol", () => {
     const runtime = newRuntime();
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
+      let before = Date.now();
       const ref = await collectWithFailingRelease(runtime, "exhausted");
       const delays = [5_000, 8_000, 13_000, 21_000, 34_000];
 
@@ -297,8 +300,9 @@ describe("ActorHost holder protocol", () => {
         const retry = await collectedRetryState(ref);
         expect(retry.attempt).toBe(attempt);
         expect(retry.alarm).toBe(retry.retryAt);
-        expect(retry.retryAt).toBeGreaterThanOrEqual(Date.now() + delay - 100);
-        expect(retry.retryAt).toBeLessThanOrEqual(Date.now() + delay + 100);
+        expect(retry.retryAt).toBeGreaterThanOrEqual(before + delay);
+        expect(retry.retryAt).toBeLessThanOrEqual(Date.now() + delay);
+        if (index < delays.length - 1) before = Date.now();
         await runInDurableObject(stubOf(ref), (instance) => instance.alarm());
       }
 
