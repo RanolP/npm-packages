@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
 import { DurableObject } from "cloudflare:workers";
 import {
   ActorKilledError,
@@ -12,6 +11,7 @@ import {
   ActorInvocationContext,
   actorHolder,
   applyHolderOp,
+  changedStateFields,
   cloneOrThrow,
   cloneState,
   createSnapshot,
@@ -501,7 +501,12 @@ export class ActorHost extends DurableObject<Env> {
       }
       /** Committed hooks are not durable; isolate failure after commit can skip them, so they are at-most-once. */
       try {
-        await frame.invocation.afterCommit();
+        const changed = Object.keys(changedStateFields(
+          frame.initialState,
+          cloneState(actor),
+          actor,
+        ));
+        await frame.invocation.afterCommit(actor.version, changed);
       } catch (error) {
         if (parentFrameId !== undefined) {
           await this.#emit(result.spawnedIds.map((target): HolderOp => ({
@@ -561,8 +566,8 @@ export class ActorHost extends DurableObject<Env> {
     },
   ): Promise<void> {
     const next = createSnapshot(actor);
-    const changed = stateFields(actor).some((key) => !isDeepStrictEqual(frame.baseline[key], next.state[key]));
-    if (!options.force && !changed) return;
+    const changed = Object.keys(changedStateFields(frame.baseline, next.state, actor));
+    if (!options.force && changed.length === 0) return;
     const { root } = frame;
     const version = actor.version + 1;
     const heldRefs = this.#stateRefs(actor, next.state);

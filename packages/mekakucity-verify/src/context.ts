@@ -3,6 +3,7 @@ import {
   action,
   actor,
   state,
+  type ActorCommitInfo,
   type ActorContextProvider,
   type ActorDescriptor,
   type ActorRef,
@@ -16,6 +17,7 @@ declare module "@mekakucity/actors" {
     readonly requestId: string | undefined;
     readonly origin: ActorDescriptor | undefined;
     registerConformanceHooks(): void;
+    reportCommitInfo(): void;
   }
 }
 
@@ -29,6 +31,11 @@ const buildContext: ActorContextProvider<ContextCarried>["build"] = (carried, ho
   registerConformanceHooks() {
     hooks.onRollback(() => { throw new Error("rollback hook ran"); });
     hooks.afterCommit(() => { throw new Error("afterCommit hook ran"); });
+  },
+  reportCommitInfo() {
+    hooks.afterCommit.bestEffort((info) => {
+      throw new Error(`commit-info:${JSON.stringify(info)}`);
+    });
   },
 });
 
@@ -93,7 +100,29 @@ class ContextHooks extends Actor<ContextHooks, {}> {
     this.ctx.registerConformanceHooks();
     throw new Error("action failed");
   }
+
+  @action async reportNoop(): Promise<void> {
+    this.ctx.reportCommitInfo();
+  }
+
+  @action async reportWrite(): Promise<void> {
+    this.committed = 3;
+    this.ctx.reportCommitInfo();
+  }
+
+  @action async reportRollback(): Promise<void> {
+    this.committed = 4;
+    this.ctx.reportCommitInfo();
+    throw new Error("reported action failed");
+  }
 }
+
+const commitInfoFrom = (error: Error): ActorCommitInfo => {
+  const marker = "commit-info:";
+  const start = error.message.indexOf(marker);
+  if (start < 0) throw error;
+  return JSON.parse(error.message.slice(start + marker.length)) as ActorCommitInfo;
+};
 
 export const actorContextSuite = (
   _factory: () => ActorRuntime,
@@ -162,6 +191,37 @@ export const actorContextSuite = (
         expect(rollbackError.message).not.toContain("afterCommit hook ran");
         await Actor.refreshValues(ref);
         expect(ref.committed).toBe(1);
+      });
+    });
+
+    contextIt("reports committed versions and net changed state fields", async () => {
+      const provider: ActorContextProvider<ContextCarried> = {
+        carry: () => ({ requestId: "commit-info" }),
+        build: buildContext,
+      };
+      const runtime = hooks!.createWithContext!(provider);
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ContextHooks, {});
+        const actor = { type: ref.type, id: ref.id };
+
+        const noopError = await ref.reportNoop().then(
+          () => { throw new Error("Expected afterCommit to reject"); },
+          (error: unknown) => error as Error,
+        );
+        expect(commitInfoFrom(noopError)).toEqual({ actor, version: 1, changed: [] });
+
+        const writeError = await ref.reportWrite().then(
+          () => { throw new Error("Expected afterCommit to reject"); },
+          (error: unknown) => error as Error,
+        );
+        expect(commitInfoFrom(writeError)).toEqual({ actor, version: 2, changed: ["committed"] });
+
+        const rollbackError = await ref.reportRollback().then(
+          () => { throw new Error("Expected the action to reject"); },
+          (error: unknown) => error as Error,
+        );
+        expect(rollbackError.message).toContain("reported action failed");
+        expect(rollbackError.message).not.toContain("commit-info:");
       });
     });
 

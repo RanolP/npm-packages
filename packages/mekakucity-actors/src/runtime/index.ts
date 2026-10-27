@@ -21,6 +21,8 @@ export type {
   ActorConstructor,
   ActorDescriptor,
   ActorDetachedSchedule,
+  ActorReadInfo,
+  ActorReadObserver,
   DueActorMessage,
   PendingActorMessage,
 } from "./actor-runtime.js";
@@ -32,7 +34,14 @@ export {
   NoActiveTransactionError,
 } from "./errors.js";
 export { ActorInvocationContext } from "./actor-context.js";
-export type { ActorContext, ActorContextProvider, ActorTransactionHooks } from "./actor-context.js";
+export type {
+  ActorAfterCommit,
+  ActorAfterCommitHook,
+  ActorCommitInfo,
+  ActorContext,
+  ActorContextProvider,
+  ActorTransactionHooks,
+} from "./actor-context.js";
 export {
   NAMED_ROOT,
   actorHolder,

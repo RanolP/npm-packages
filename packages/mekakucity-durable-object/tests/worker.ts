@@ -16,6 +16,11 @@ const contextProvider: ActorContextProvider = {
       hooks.onRollback(() => { throw new Error("rollback hook ran"); });
       hooks.afterCommit(() => { throw new Error("afterCommit hook ran"); });
     },
+    reportCommitInfo() {
+      hooks.afterCommit.bestEffort((info) => {
+        throw new Error(`commit-info:${JSON.stringify(info)}`);
+      });
+    },
   }),
 };
 

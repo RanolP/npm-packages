@@ -11,6 +11,13 @@ export interface ActorDescriptor {
   readonly id: string;
 }
 
+export interface ActorReadInfo {
+  readonly actor: ActorDescriptor;
+  readonly version: number | undefined;
+}
+
+export type ActorReadObserver = (info: ActorReadInfo) => void;
+
 export type ActorDetachedSchedule =
   | { readonly afterMs: number }
   | { readonly dueAt: number };
@@ -44,6 +51,7 @@ export const resolveActorMessage = <Message extends object>(
 };
 
 const activeRuntime = new AsyncLocalStorage<ActorRuntime>();
+const activeReadObservers = new AsyncLocalStorage<readonly ActorReadObserver[]>();
 
 export abstract class ActorRuntime {
   protected withActiveRuntime<Result>(work: () => Result): Result {
@@ -54,6 +62,16 @@ export abstract class ActorRuntime {
     const runtime = activeRuntime.getStore();
     if (!runtime) throw new NoActiveActorRuntimeError(operation);
     return runtime;
+  }
+
+  static observeReads<Result>(work: () => Result, onRead: ActorReadObserver): Result {
+    const observers = [...(activeReadObservers.getStore() ?? []), onRead];
+    return activeReadObservers.run(observers, work);
+  }
+
+  protected observeRead(actor: ActorDescriptor, version: number | undefined): void {
+    const descriptor = { type: actor.type, id: actor.id };
+    for (const observer of activeReadObservers.getStore() ?? []) observer({ actor: descriptor, version });
   }
 
   abstract run<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>>;

@@ -446,8 +446,10 @@ export class DurableObjectActorRuntime extends ActorRuntime {
     return this.#core.named(Type, key);
   }
 
-  refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
-    return this.#core.refreshValues(ref);
+  async refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
+    const refreshed = await this.#core.refreshValues(ref);
+    this.#observeRef(refreshed);
+    return refreshed;
   }
 
   selfDescriptorOf(instance: object): ActorDescriptor {
@@ -458,8 +460,10 @@ export class DurableObjectActorRuntime extends ActorRuntime {
     return this.#core.actorContextOf(instance);
   }
 
-  invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
-    return this.#core.invokeRefAction(ref, actionName, args);
+  async invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
+    const result = await this.#core.invokeRefAction(ref, actionName, args);
+    this.#observeRef(ref);
+    return result;
   }
 
   invokeLocalAction(instance: object, actionName: string, args: unknown[], run: () => unknown): unknown {
@@ -471,7 +475,14 @@ export class DurableObjectActorRuntime extends ActorRuntime {
   }
 
   readSnapshotValue(ref: ActorDescriptor, key: string): unknown {
-    return this.#core.readSnapshotValue(ref, key);
+    const value = this.#core.readSnapshotValue(ref, key);
+    this.#observeRef(ref);
+    return value;
+  }
+
+  #observeRef(ref: ActorDescriptor): void {
+    const snapshot = snapshots.get(ref.id);
+    this.observeRead(ref, snapshot?.data ? snapshot.version : undefined);
   }
 }
 

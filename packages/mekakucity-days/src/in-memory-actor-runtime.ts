@@ -108,8 +108,10 @@ export class InMemoryActorRuntime extends ActorRuntime {
     return namedActor(this.#memory, Type, key);
   }
 
-  refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
-    return refreshActorValues(this.#memory, ref);
+  async refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
+    const refreshed = await refreshActorValues(this.#memory, ref);
+    this.#observeRef(refreshed);
+    return refreshed;
   }
 
   selfDescriptorOf(instance: object): ActorDescriptor {
@@ -128,8 +130,10 @@ export class InMemoryActorRuntime extends ActorRuntime {
     return context.frame.invocation.get();
   }
 
-  invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
-    return invokeRefAction(this.#memory, ref, actionName, args);
+  async invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
+    const result = await invokeRefAction(this.#memory, ref, actionName, args);
+    this.#observeRef(ref);
+    return result;
   }
 
   invokeLocalAction(instance: object, actionName: string, args: unknown[], run: () => unknown): unknown {
@@ -141,7 +145,14 @@ export class InMemoryActorRuntime extends ActorRuntime {
   }
 
   readSnapshotValue(ref: ActorDescriptor, key: string): unknown {
-    return readSnapshotValue(this.#memory, ref, key);
+    const value = readSnapshotValue(this.#memory, ref, key);
+    this.#observeRef(ref);
+    return value;
+  }
+
+  #observeRef(ref: ActorDescriptor): void {
+    const snapshot = this.#memory.snapshotCache.get(ref.id);
+    this.observeRead(ref, snapshot?.data ? snapshot.version : undefined);
   }
 
   [inMemoryActorRuntimeTestHooks](): InMemoryActorRuntimeTestHooks {

@@ -106,7 +106,12 @@ export const invokeActorAction = async (
         await frame.invocation.afterRollback(error);
         throw error;
       }
-      await frame.invocation.afterCommit();
+      const changed = Object.keys(changedStateFields(
+        frame.initialState,
+        restoreSnapshotData(record),
+        record,
+      ));
+      await frame.invocation.afterCommit(record.version, changed);
       return reply;
     });
   });

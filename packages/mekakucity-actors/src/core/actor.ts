@@ -2,7 +2,11 @@ import { metadataFor } from "../action/decorators.js";
 import { ActorSelfRefUnavailableError } from "../ref/errors.js";
 import { immediateActorSchedule, normalizeActorSchedule } from "../ref/schedule.js";
 import type { ActorInput, ActorRef, ActorRefInit, ActorScheduleOptions, ActorSelfRef } from "../ref/types.js";
-import type { ActorDescriptor, ActorConstructor } from "../runtime/actor-runtime.js";
+import type {
+  ActorDescriptor,
+  ActorConstructor,
+  ActorReadObserver,
+} from "../runtime/actor-runtime.js";
 import { ActorRuntime } from "../runtime/actor-runtime.js";
 import { ActorContextUnavailableError, NoActiveActorRuntimeError } from "../runtime/errors.js";
 import type { ActorContext } from "../runtime/actor-context.js";
@@ -73,5 +77,9 @@ export abstract class Actor<Self, Input> {
 
   static refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
     return ActorRuntime.current("Actor.refreshValues").refreshValues(ref);
+  }
+
+  static observeReads<Result>(work: () => Result, onRead: ActorReadObserver): Result {
+    return ActorRuntime.observeReads(work, onRead);
   }
 }
