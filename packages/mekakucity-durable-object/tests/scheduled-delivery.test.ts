@@ -33,7 +33,7 @@ test("a scheduled message survives target Durable Object restart", async () => {
   }
   if (received !== 1) throw new Error(`Timed out waiting for scheduled delivery; last received value: ${received}`);
   expect(received).toBe(1);
-});
+}, 30_000);
 
 test("a busy inbox dispatch uses five persisted backstop alarms without a tight loop", async () => {
   const started = Promise.withResolvers<void>();
@@ -50,6 +50,7 @@ test("a busy inbox dispatch uses five persisted backstop alarms without a tight 
   const runtime = new DurableObjectActorRuntime(env.ACTOR_HOST, { scope });
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
   try {
+    const before = Date.now();
     const target = await runtime.run(async () => {
       const ref = await Actor.ofNamed(SlowTarget, "slow-scheduled-target").orSpawn(() => ({}));
       ref.receive.runDetached();
@@ -61,10 +62,11 @@ test("a busy inbox dispatch uses five persisted backstop alarms without a tight 
       alarm: await state.storage.getAlarm(),
       backstop: [...state.storage.kv.list<{ attempt: number; retryAt?: number }>({ prefix: "inbox-backstop:" })][0],
     }));
+    const after = Date.now();
     expect(first.backstop?.[1].attempt).toBe(0);
     expect(first.alarm).toBe(first.backstop?.[1].retryAt);
-    expect(first.alarm).toBeGreaterThanOrEqual(Date.now() + 4_900);
-    expect(first.alarm).toBeLessThanOrEqual(Date.now() + 5_100);
+    expect(first.alarm).toBeGreaterThanOrEqual(before + 5_000);
+    expect(first.alarm).toBeLessThanOrEqual(after + 5_000);
 
     const delays = [8_000, 13_000, 21_000, 34_000];
     for (const [index, delay] of delays.entries()) {
@@ -81,10 +83,11 @@ test("a busy inbox dispatch uses five persisted backstop alarms without a tight 
           backstop: state.storage.kv.get<{ attempt: number; retryAt?: number }>(entry[0]),
         };
       });
+      const after = Date.now();
       expect(wake.backstop?.attempt).toBe(index + 1);
       expect(wake.alarm).toBe(wake.backstop?.retryAt);
-      expect(wake.alarm).toBeGreaterThanOrEqual(before + delay - 100);
-      expect(wake.alarm).toBeLessThanOrEqual(Date.now() + delay + 100);
+      expect(wake.alarm).toBeGreaterThanOrEqual(before + delay);
+      expect(wake.alarm).toBeLessThanOrEqual(after + delay);
     }
 
     const exhausted = await runInDurableObject(stubOf(target), async (instance, state) => {

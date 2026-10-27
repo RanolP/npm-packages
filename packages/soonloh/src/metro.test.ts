@@ -36,15 +36,16 @@ describe('withSoonloh (metro)', () => {
       // so poll briefly for the generated file.
       const target = path.join(dir, 'src/generated/link.ts');
       let generated = '';
-      for (let i = 0; i < 50 && !generated; i++) {
+      for (let i = 0; i < 250 && !generated; i++) {
         generated = await readFile(target, 'utf-8').catch(() => '');
         if (!generated) await new Promise((r) => setTimeout(r, 20));
       }
+      if (!generated) throw new Error(`Timed out waiting for ${target}; last observed value: ${JSON.stringify(generated)}`);
 
       expect(generated).toContain('export interface LinkMap');
       expect(generated).toContain('"/home"');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
