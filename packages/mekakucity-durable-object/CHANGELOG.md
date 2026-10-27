@@ -1,5 +1,15 @@
 # @mekakucity/durable-object
 
+## 0.3.0
+
+### Minor Changes
+
+- 2532358: Add augmentable, per-action actor context with caller and detached-origin propagation plus transaction hooks to the actor contract, in-memory runtime, and Durable Object runtime.
+
+### Patch Changes
+
+- 50d9489: Document that `nodejs_compat` is needed only before `compatibility_date` 2026-08-04; from that date workerd provides `node:async_hooks` and `node:util` without a flag.
+
 ## 0.2.0
 
 ### Minor Changes
