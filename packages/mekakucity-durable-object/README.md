@@ -12,14 +12,13 @@ pnpm add @mekakucity/actors @mekakucity/durable-object
 
 ## Bind the host in wrangler.jsonc
 
-The host class must be bound as `ACTOR_HOST`: actions running inside one actor reach every other actor through that binding. It must be a SQLite-backed class, declared under `new_sqlite_classes` in a migration, and the worker needs `nodejs_compat` because the contract scopes transactions with `node:async_hooks`.
+The host class must be bound as `ACTOR_HOST`: actions running inside one actor reach every other actor through that binding. It must be a SQLite-backed class, declared under `new_sqlite_classes` in a migration. The packages import `node:async_hooks` and `node:util`, which workerd provides without a flag from `compatibility_date` 2026-08-04; with an earlier date, add `"compatibility_flags": ["nodejs_compat"]`.
 
 ```jsonc
 {
   "name": "my-worker",
   "main": "src/worker.ts",
   "compatibility_date": "2026-10-19",
-  "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
     "bindings": [{ "name": "ACTOR_HOST", "class_name": "ActorHost" }]
   },
