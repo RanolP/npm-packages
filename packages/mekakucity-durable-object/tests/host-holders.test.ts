@@ -2,13 +2,18 @@ import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { Actor, actor, ActorKilledError, action, state, type ActorRef } from "@mekakucity/actors";
 import { actorHolder, messageHolder, NAMED_ROOT, type HolderOp } from "@mekakucity/actors/runtime";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { DurableObjectActorRuntime } from "../src/index.js";
 import { Outbox } from "../src/outbox.js";
 
 @actor("host-holders/Probe")
 class Probe extends Actor<Probe, {}> {
   @action async ping(): Promise<string> { return "alive"; }
+}
+
+@actor("host-holders/CreateFailure")
+class CreateFailure extends Actor<CreateFailure, { target: ActorRef<Probe> }> {
+  @state accessor target = this.input.target;
 }
 
 const newRuntime = () => new DurableObjectActorRuntime(env.ACTOR_HOST, { scope: crypto.randomUUID() });
@@ -21,12 +26,34 @@ const outboxSize = (ref: { id: string }) =>
   runInDurableObject(stubOf(ref), (_instance, state) => [...state.storage.kv.list({ prefix: "outbox:" })].length);
 const inboxSize = (ref: { id: string }) =>
   runInDurableObject(stubOf(ref), (_instance, state) => [...state.storage.kv.list({ prefix: "inbox:" })].length);
+const collectedRetryState = (ref: { id: string }) =>
+  runInDurableObject(stubOf(ref), async (_instance, state) => ({
+    alarm: await state.storage.getAlarm(),
+    attempt: state.storage.kv.get<number>("collected-retry-attempt"),
+    retryAt: state.storage.kv.get<number>("collected-retry-at"),
+  }));
 const seenKeys = (ref: { id: string }) =>
   runInDurableObject(stubOf(ref), (_instance, state) => [...state.storage.kv.list({ prefix: "seen:" })].map(([key]) => key));
 const until = async (done: () => Promise<boolean>) => {
   for (let i = 0; i < 200 && !(await done()); i += 1) await new Promise((r) => setTimeout(r, 5));
 };
 const op = (kind: HolderOp["kind"], ref: { id: string }, holder: string): HolderOp => ({ kind, target: ref.id, holder });
+const FAILED_RELEASE_TARGET = "not-a-durable-object-id";
+
+const collectWithFailingRelease = async (runtime: DurableObjectActorRuntime, name: string) => {
+  const holder = actorHolder(`collected-retry-${name}`);
+  const ref = await runtime.run(async () => {
+    const ref = await Actor.spawn(Probe, {});
+    await stubOf(ref).applyHolderOps([op("hold", ref, holder)]);
+    return ref;
+  });
+  await runInDurableObject(stubOf(ref), (_instance, state) => {
+    state.storage.kv.put("heldRefs", [FAILED_RELEASE_TARGET]);
+  });
+  await runInDurableObject(stubOf(ref), (_instance, state) => state.abort()).catch(() => {});
+  await stubOf(ref).applyHolderOps([op("release", ref, holder)]);
+  return ref;
+};
 
 describe("ActorHost holder protocol", () => {
   // Regression: at-least-once outbox delivery re-sends ops; a non-idempotent apply would double-count a holder.
@@ -114,7 +141,14 @@ describe("ActorHost holder protocol", () => {
     }
     const runtime = newRuntime();
     const counter = await runtime.run(() => Actor.ofNamed(Counter, "redelivered").orSpawn(() => ({})));
-    const message = { id: "message_redelivered", target: { type: counter.type, id: counter.id }, action: "hit", args: [], heldIds: [] };
+    const message = {
+      id: "message_redelivered",
+      target: { type: counter.type, id: counter.id },
+      action: "hit",
+      args: [],
+      heldIds: [],
+      dueAt: Date.now(),
+    };
     const origin = { sender: "sender-host", seq: 7 };
     const waitInboxEmpty = async () => {
       for (let i = 0; i < 1_000 && (await inboxSize(counter)) > 0; i += 1) await new Promise((r) => setTimeout(r, 5));
@@ -130,7 +164,7 @@ describe("ActorHost holder protocol", () => {
   });
 
   // Regression (review R1): when delivering an invoke's own rows failed, the invoke rejected but its committed
-  // hold(tx:root) still went out on the alarm retry; the caller never learned the id, so the child lived forever.
+  // hold(tx:root) still went out on the next host call; the caller never learned the id, so the child lived forever.
   test("an invoke rejected by a failed delivery releases the holds its commit queued", async () => {
     let childId: string | undefined;
     @actor("host-holders/LeakySpawner")
@@ -158,6 +192,132 @@ describe("ActorHost holder protocol", () => {
     });
     await until(async () => (await outboxSize(spawner)) === 0 && (await storedKeys(child)).length === 0);
     expect(await storedKeys(child)).toEqual([]);
+  });
+
+  test("a failed delivery has no alarm and is retried when the sender next runs", async () => {
+    @actor("host-holders/RetrySender")
+    class RetrySender extends Actor<RetrySender, {}> {
+      @action async ping() {}
+    }
+    const runtime = newRuntime();
+    const [target, sender] = await runtime.run(async () => {
+      const target = await Actor.ofNamed(Probe, "retry-target").orSpawn(() => ({}));
+      const sender = await Actor.ofNamed(RetrySender, "retry-sender").orSpawn(() => ({}));
+      return [target, sender] as const;
+    });
+    const holder = messageHolder("retry-on-next-call");
+    const failedTarget = "not-a-durable-object-id";
+    const sequence = await runInDurableObject(stubOf(sender), (_instance, state) =>
+      new Outbox(state.storage.kv).append([op("hold", { id: failedTarget }, holder)]));
+    const key = `outbox:${String(sequence).padStart(12, "0")}`;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(runtime.run(() => sender.ping())).rejects.toThrow();
+      expect(await outboxSize(sender)).toBe(1);
+      expect(await runInDurableObject(stubOf(sender), (_instance, state) => state.storage.getAlarm())).toBeNull();
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error.mock.calls[0]?.[0]).toContain(`ActorHost ${sender.id}: outbox row`);
+      expect(error.mock.calls[0]?.[0]).toContain(`delivery to ${failedTarget} failed`);
+
+      await runInDurableObject(stubOf(sender), (_instance, state) => {
+        state.storage.kv.put(key, { kind: "ops", target: target.id, ops: [op("hold", target, holder)] });
+      });
+      await runtime.run(() => sender.ping());
+      await until(async () => (await outboxSize(sender)) === 0);
+      expect(await storedHolders(target)).toContain(holder);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  test("a collected actor retries a failed release via its alarm and then deletes its storage", async () => {
+    const runtime = newRuntime();
+    const target = await runtime.run(() => Actor.ofNamed(Probe, "collected-retry-target").orSpawn(() => ({})));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const ref = await collectWithFailingRelease(runtime, "once");
+      const first = await collectedRetryState(ref);
+      expect(first.attempt).toBe(1);
+      expect(first.alarm).toBe(first.retryAt);
+      expect(first.retryAt).toBeGreaterThanOrEqual(Date.now() + 4_900);
+
+      await runInDurableObject(stubOf(ref), (_instance, state) => {
+        const [entry] = [...state.storage.kv.list({ prefix: "outbox:" })];
+        if (!entry) throw new Error("Expected a pending release row");
+        state.storage.kv.put(entry[0], {
+          kind: "ops",
+          target: target.id,
+          ops: [op("release", target, actorHolder(ref.id))],
+        });
+      });
+      await runInDurableObject(stubOf(ref), (instance) => instance.alarm());
+
+      expect(await storedKeys(ref)).toEqual([]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  test("an unnamed actor collected after its initial hold fails arms a collected retry", async () => {
+    const ref = { id: env.ACTOR_HOST.newUniqueId().toString() };
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const result = await stubOf(ref).create({
+        scope: crypto.randomUUID(),
+        type: "host-holders/CreateFailure",
+        input: { target: { type: "host-holders/Probe", id: FAILED_RELEASE_TARGET } },
+        named: false,
+        holders: [actorHolder("create-failure-caller")],
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("Expected create to fail");
+      expect(result.error.message).toContain("Invalid Durable Object ID");
+      await until(async () => (await collectedRetryState(ref)).attempt !== undefined);
+      const retry = await collectedRetryState(ref);
+      const collected = await runInDurableObject(stubOf(ref), (_instance, state) =>
+        state.storage.kv.get<boolean>("collected"));
+      expect(collected).toBe(true);
+      expect(retry.attempt).toBe(1);
+      expect(retry.alarm).toBe(retry.retryAt);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  test("a collected actor stops after five failed release retries and preserves its storage", async () => {
+    const runtime = newRuntime();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const ref = await collectWithFailingRelease(runtime, "exhausted");
+      const delays = [5_000, 8_000, 13_000, 21_000, 34_000];
+
+      for (const [index, delay] of delays.entries()) {
+        const attempt = index + 1;
+        const retry = await collectedRetryState(ref);
+        expect(retry.attempt).toBe(attempt);
+        expect(retry.alarm).toBe(retry.retryAt);
+        expect(retry.retryAt).toBeGreaterThanOrEqual(Date.now() + delay - 100);
+        expect(retry.retryAt).toBeLessThanOrEqual(Date.now() + delay + 100);
+        await runInDurableObject(stubOf(ref), (instance) => instance.alarm());
+      }
+
+      const exhausted = await collectedRetryState(ref);
+      expect(exhausted).toEqual({ alarm: null, attempt: 5, retryAt: undefined });
+      expect(await storedKeys(ref)).toEqual(expect.arrayContaining([
+        "collected",
+        "collected-retry-attempt",
+        "holders",
+        "outbox:000000000001",
+      ]));
+      expect(error).toHaveBeenCalledTimes(6);
+      expect(error.mock.calls.at(-1)?.[0]).toContain(
+        `ActorHost ${ref.id}: outbox row 1 delivery to ${FAILED_RELEASE_TARGET} failed after 5 collected retries`,
+      );
+      expect(error.mock.calls.at(-1)?.[0]).toContain("actor storage and holds are left in place");
+    } finally {
+      error.mockRestore();
+    }
   });
 
   // Regression (review R2): a receiver kept one seen:<sender> watermark per sender forever, so a long-lived

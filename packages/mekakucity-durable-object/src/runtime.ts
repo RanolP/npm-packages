@@ -11,6 +11,7 @@ import {
   type Actor,
   type ActorConstructor,
   type ActorDescriptor,
+  type ActorDetachedSchedule,
   type ActorInput,
   type ActorRef,
   type ActorRefInit,
@@ -32,13 +33,21 @@ import {
   recordTxHold,
   txHolder,
   txReleaseOps,
+  resolveActorMessage,
   type TxHold,
   type HolderOp,
 } from "@mekakucity/actors/runtime";
 import { unwrap } from "./errors.js";
 import type { ActorHost } from "./host.js";
 import { groupOps } from "./outbox.js";
-import { stubOf, type ActorHostRpc, type ActorView, type CallContext, type OutboxMessage } from "./protocol.js";
+import {
+  stubOf,
+  type ActorHostRpc,
+  type ActorView,
+  type CallContext,
+  type DueOutboxMessage,
+  type PendingOutboxMessage,
+} from "./protocol.js";
 import { isKnownType, lookupType, typeNameOf } from "./registry.js";
 import { snapshots } from "./snapshots.js";
 
@@ -53,7 +62,7 @@ export interface RootTransaction {
   /** (target, holder) holds this root owns, released when it ends; a proxy root hands them back to its caller. */
   readonly owned: Map<string, TxHold>;
   /** Detached messages and their holds queued outside any action frame (client-side roots only). */
-  readonly outbox: OutboxMessage[];
+  readonly outbox: PendingOutboxMessage[];
   readonly holds: HolderOp[];
 }
 
@@ -66,7 +75,7 @@ export interface ActionFrame {
   readonly startVersion: number;
   readonly initialState: StateData;
   readonly spawnedIds: Set<string>;
-  readonly outbox: OutboxMessage[];
+  readonly outbox: PendingOutboxMessage[];
   readonly pendingOps: HolderOp[];
   baseline: StateData;
 }
@@ -171,7 +180,7 @@ export class RuntimeCore {
     }
   }
 
-  async deliverMessage(message: OutboxMessage): Promise<void> {
+  async deliverMessage(message: DueOutboxMessage): Promise<void> {
     const ack = await this.stub(message.target.id).deliverMessage(message);
     if (ack === "dead") {
       await this.deliverOps(messageReleaseOps(message, { exceptTarget: true }));
@@ -182,7 +191,10 @@ export class RuntimeCore {
   async finishRoot(root: RootTransaction, succeeded: boolean): Promise<void> {
     if (succeeded) {
       await this.deliverOps(root.holds.splice(0));
-      for (const message of root.outbox.splice(0)) await this.deliverMessage(message);
+      const committedAt = Date.now();
+      for (const message of root.outbox.splice(0)) {
+        await this.deliverMessage(resolveActorMessage(message, committedAt));
+      }
     } else {
       // Their holds were never sent, so there is nothing to release.
       root.holds.length = 0;
@@ -323,7 +335,7 @@ export class RuntimeCore {
     return this.local.invokeNested(context.frame, actionName, run);
   }
 
-  runDetached(ref: ActorDescriptor, actionName: string, args: unknown[]): void {
+  runDetached(ref: ActorDescriptor, actionName: string, args: unknown[], schedule: ActorDetachedSchedule): void {
     const context = this.current(`Queue detached action ${actionName}`);
     const id = `message_${crypto.randomUUID()}`;
     const clonedArgs = cloneOrThrow(
@@ -331,12 +343,13 @@ export class RuntimeCore {
       (cause) => new ActorRuntimeError("runDetached() arguments must be structuredClone-serializable", { cause }),
     );
     const heldIds = new Set<string>([ref.id, ...this.collectRefs(clonedArgs)]);
-    const message: OutboxMessage = {
+    const message: PendingOutboxMessage = {
       id,
       target: { type: ref.type, id: ref.id },
       action: actionName,
       args: clonedArgs,
       heldIds: [...heldIds],
+      schedule,
     };
     const holds = message.heldIds.map((target): HolderOp => ({ kind: "hold", target, holder: messageHolder(id) }));
     // Message holds ride with the sender's next segment commit, so a rolled-back segment never sends them.
@@ -404,8 +417,8 @@ export class DurableObjectActorRuntime extends ActorRuntime {
     return this.#core.invokeLocalAction(instance, actionName, args, run);
   }
 
-  runDetached(ref: ActorDescriptor, actionName: string, args: unknown[]): void {
-    this.#core.runDetached(ref, actionName, args);
+  runDetached(ref: ActorDescriptor, actionName: string, args: unknown[], schedule: ActorDetachedSchedule): void {
+    this.#core.runDetached(ref, actionName, args, schedule);
   }
 
   readSnapshotValue(ref: ActorDescriptor, key: string): unknown {

@@ -1,6 +1,7 @@
 import { metadataFor } from "../action/decorators.js";
 import { ActorSelfRefUnavailableError } from "../ref/errors.js";
-import type { ActorInput, ActorRef, ActorRefInit, ActorSelfRef } from "../ref/types.js";
+import { immediateActorSchedule, normalizeActorSchedule } from "../ref/schedule.js";
+import type { ActorInput, ActorRef, ActorRefInit, ActorScheduleOptions, ActorSelfRef } from "../ref/types.js";
 import type { ActorDescriptor, ActorConstructor } from "../runtime/actor-runtime.js";
 import { ActorRuntime } from "../runtime/actor-runtime.js";
 import { NoActiveActorRuntimeError } from "../runtime/errors.js";
@@ -29,7 +30,13 @@ export abstract class Actor<Self, Input> {
     for (const actionName of metadataFor(this).actions.keys()) {
       Object.defineProperty(ref, actionName, {
         value: Object.freeze({
-          runDetached: (...args: unknown[]) => runtime.runDetached(descriptor, actionName, args),
+          runDetached: (...args: unknown[]) => runtime.runDetached(descriptor, actionName, args, immediateActorSchedule),
+          schedule: (options: ActorScheduleOptions) => {
+            const schedule = normalizeActorSchedule(options);
+            return Object.freeze({
+              runDetached: (...args: unknown[]) => runtime.runDetached(descriptor, actionName, args, schedule),
+            });
+          },
         }),
         enumerable: false,
         configurable: false,

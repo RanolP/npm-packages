@@ -16,8 +16,14 @@ export {
   stateFields,
 } from "../state/snapshot.js";
 export type { ActorSnapshot, ActorStateRecord, StateData } from "../state/snapshot.js";
-export { ActorRuntime } from "./actor-runtime.js";
-export type { ActorConstructor, ActorDescriptor } from "./actor-runtime.js";
+export { ActorRuntime, resolveActorMessage, resolveDueAt } from "./actor-runtime.js";
+export type {
+  ActorConstructor,
+  ActorDescriptor,
+  ActorDetachedSchedule,
+  DueActorMessage,
+  PendingActorMessage,
+} from "./actor-runtime.js";
 export { ActorRuntimeError, NoActiveActorRuntimeError, NoActiveTransactionError } from "./errors.js";
 export {
   NAMED_ROOT,

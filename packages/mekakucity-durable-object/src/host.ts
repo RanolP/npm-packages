@@ -18,10 +18,12 @@ import {
   messageReleaseOps,
   metadataFor,
   restoreState,
+  resolveDueAt,
   settleSpawnOps,
   stateFields,
   recordTxHold,
   txReleaseOps,
+  resolveActorMessage,
   type HolderOp,
 } from "@mekakucity/actors/runtime";
 import { capture } from "./errors.js";
@@ -36,7 +38,8 @@ import {
   type InvokeRequest,
   type InvokeResult,
   type MessageOrigin,
-  type OutboxMessage,
+  type DueOutboxMessage,
+  type PendingOutboxMessage,
   type OutboxRow,
   type Outcome,
 } from "./protocol.js";
@@ -56,7 +59,12 @@ const VERSION = "version";
 const HOLDERS = "holders";
 const HELD_REFS = "heldRefs";
 const COLLECTED = "collected";
+const COLLECTED_RETRY_ATTEMPT = "collected-retry-attempt";
+const COLLECTED_RETRY_AT = "collected-retry-at";
+const RETRY_DELAYS_MS = [5_000, 8_000, 13_000, 21_000, 34_000] as const;
 const INBOX_PREFIX = "inbox:";
+const INBOX_SEQUENCE = "inbox-sequence";
+const INBOX_BACKSTOP_PREFIX = "inbox-backstop:";
 /** `seen:<sender>`: highest outbox sequence stored from that sender (deliverMessage dedupe). */
 const SEEN_PREFIX = "seen:";
 /**
@@ -66,9 +74,6 @@ const SEEN_PREFIX = "seen:";
  * itself is collected, since nothing tells the sender.
  */
 const SENT_PREFIX = "sent:";
-
-/** Backstop alarm for at-least-once delivery when an inline flush failed or the object was evicted mid-flush. */
-const RETRY_MS = 5_000;
 
 interface ActorMeta {
   readonly scope: string;
@@ -90,8 +95,56 @@ interface HostedActor {
 
 interface InboxEntry {
   readonly key: string;
-  readonly message: OutboxMessage;
+  readonly message: DueOutboxMessage;
 }
+
+interface StoredInboxMessage {
+  readonly message: DueOutboxMessage;
+  readonly dueAt: number;
+  readonly sequence: number;
+}
+
+interface InboxBackstop {
+  readonly attempt: number;
+  readonly retryAt?: number;
+}
+
+const inboxBackstopKey = (inboxKey: string) => `${INBOX_BACKSTOP_PREFIX}${inboxKey.slice(INBOX_PREFIX.length)}`;
+
+const isDueMessage = (value: unknown): value is DueOutboxMessage => {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("target" in value) || typeof value.target !== "object" || value.target === null) return false;
+  return "id" in value
+    && typeof value.id === "string"
+    && "type" in value.target
+    && typeof value.target.type === "string"
+    && "id" in value.target
+    && typeof value.target.id === "string"
+    && "action" in value
+    && typeof value.action === "string"
+    && "args" in value
+    && Array.isArray(value.args)
+    && "heldIds" in value
+    && Array.isArray(value.heldIds)
+    && "dueAt" in value
+    && typeof value.dueAt === "number";
+};
+
+const readStoredInboxMessage = (value: unknown): StoredInboxMessage => {
+  if (typeof value !== "object" || value === null || !("message" in value)) {
+    throw new ActorRuntimeError(
+      "Stored inbox message is incompatible: expected the scheduled-message storage format",
+    );
+  }
+  if (!isDueMessage(value.message)
+    || !("dueAt" in value)
+    || typeof value.dueAt !== "number"
+    || !("sequence" in value)
+    || typeof value.sequence !== "number") {
+    throw new ActorRuntimeError("Stored inbox message is invalid");
+  }
+  return { message: value.message, dueAt: value.dueAt, sequence: value.sequence };
+};
 
 interface Env {
   readonly ACTOR_HOST?: DurableObjectNamespace<ActorHost>;
@@ -109,6 +162,7 @@ export class ActorHost extends DurableObject<Env> {
   #killed = false;
   #mailbox: Promise<void> = Promise.resolve();
   #flushing: Promise<void> | undefined;
+  #deliveryFailure: { seq: number; error: unknown } | undefined;
   #dispatching = false;
   /** Callers waiting until every outbox row through `seq` was acked (#awaitDelivered). */
   #deliveryWaiters: { seq: number; resolve: () => void; reject: (error: unknown) => void }[] = [];
@@ -135,7 +189,7 @@ export class ActorHost extends DurableObject<Env> {
 
   create(request: CreateRequest): Promise<Outcome<ActorView>> {
     return capture(async () => {
-      const existing = this.#load();
+      const existing = this.#loadForWork();
       if (existing) {
         if (request.named) return viewOf(existing);
         throw new ActorRuntimeError(`Actor ${this.#id} already exists`);
@@ -185,14 +239,14 @@ export class ActorHost extends DurableObject<Env> {
 
   view(): Promise<Outcome<ActorView | null>> {
     return capture(async () => {
-      const actor = this.#load();
+      const actor = this.#loadForWork();
       return actor ? viewOf(actor) : null;
     });
   }
 
   invoke(request: InvokeRequest): Promise<Outcome<InvokeResult>> {
     return capture(async () => {
-      const actor = this.#load();
+      const actor = this.#loadForWork();
       if (!actor) throw new ActorKilledError(this.#id);
       if (request.context.chain.includes(actor.id)) throw new ActorReentrancyError(actor.id);
       const root = actor.core.newRoot(false, request.context.rootId, request.context.callId);
@@ -215,7 +269,7 @@ export class ActorHost extends DurableObject<Env> {
       try {
         await this.#awaitDelivered(written);
       } catch (error) {
-        // The rows still go out on the retry, but the caller gets an error instead of owned and spawnedIds
+        // The rows remain pending, but the caller gets an error instead of owned and spawnedIds
         // and releases neither. Releases appended here leave after their holds (one sender, strict order), and
         // name only this call's tx holder (and those of calls it made), never another reply's in the same root.
         const { parentFrameId } = request.context;
@@ -231,6 +285,7 @@ export class ActorHost extends DurableObject<Env> {
 
   /** Target side of the holder protocol; resolving is the ack the sender's outbox waits for. */
   async applyHolderOps(ops: HolderOp[]): Promise<void> {
+    this.#loadForWork();
     this.#applyOps(ops);
     await this.#flush();
   }
@@ -243,34 +298,57 @@ export class ActorHost extends DurableObject<Env> {
    * sender's last rows are forget-seen (forgetSender). Sender ids are never reused (unique ids are fresh, named
    * actors are never collected), so a watermark never meets a restarted sequence. Messages sent from a client root carry no origin: they are sent once, never retried.
    */
-  async deliverMessage(message: OutboxMessage, origin?: MessageOrigin): Promise<DeliveryAck> {
-    if (!this.#load()) return "dead";
+  async deliverMessage(message: DueOutboxMessage, origin?: MessageOrigin): Promise<DeliveryAck> {
+    if (typeof message.dueAt !== "number") {
+      throw new ActorRuntimeError("Detached message must have a numeric dueAt before delivery");
+    }
+    resolveDueAt({ dueAt: message.dueAt }, Date.now());
+    if (!this.#loadForWork()) return "dead";
     const key = `${INBOX_PREFIX}${message.id}`;
     const seenKey = `${SEEN_PREFIX}${origin?.sender}`;
     const duplicate = origin !== undefined && (this.#kv.get<number>(seenKey) ?? 0) >= origin.seq;
     if (!duplicate && this.#kv.get(key) === undefined) {
       this.ctx.storage.transactionSync(() => {
-        this.#kv.put(key, message);
+        const sequence = (this.#kv.get<number>(INBOX_SEQUENCE) ?? 0) + 1;
+        this.#kv.put(INBOX_SEQUENCE, sequence);
+        this.#kv.put(key, { message, dueAt: message.dueAt, sequence } satisfies StoredInboxMessage);
         if (origin) this.#kv.put(seenKey, origin.seq);
       });
     }
-    this.#scheduleRetry();
+    this.#scheduleAlarm();
     void this.#dispatchInbox();
     return "queued";
   }
 
   /** Drops a collected sender's watermark: its forget-seen row is its last, so nothing it sent can arrive later. */
   async forgetSender(sender: string): Promise<void> {
-    if (!this.#load()) return;
+    if (!this.#loadForWork()) return;
     this.#kv.delete(`${SEEN_PREFIX}${sender}`);
   }
 
   override async alarm(): Promise<void> {
+    this.#advanceInboxBackstops(Date.now());
+    if (this.#kv.get(COLLECTED)) {
+      this.#kv.delete(COLLECTED_RETRY_AT);
+      this.#deliveryFailure = undefined;
+    } else {
+      this.#loadForWork();
+    }
     await this.#flush();
     await this.#dispatchInbox();
+    this.#scheduleAlarm();
   }
 
   // ---- loading -------------------------------------------------------------
+
+  #loadForWork(): HostedActor | undefined {
+    const actor = this.#load();
+    if (actor && this.#outbox.first()) {
+      this.#deliveryFailure = undefined;
+      void this.#flush();
+    }
+    return actor;
+  }
 
   #load(): HostedActor | undefined {
     if (this.#killed) return undefined;
@@ -281,6 +359,7 @@ export class ActorHost extends DurableObject<Env> {
       this.#killed = true;
       return undefined;
     }
+    for (const [, value] of this.#kv.list<unknown>({ prefix: INBOX_PREFIX })) readStoredInboxMessage(value);
     const core = createHostRuntimeCore(this.#binding(), meta.scope);
     const Type = lookupType(meta.type);
     const snapshot = this.#kv.get<StateData>(SNAPSHOT) ?? {};
@@ -425,7 +504,7 @@ export class ActorHost extends DurableObject<Env> {
       preserve: boolean;
       before?: HolderOp[];
       after?: HolderOp[];
-      messages?: OutboxMessage[];
+      messages?: PendingOutboxMessage[];
       /** Runs inside the commit's transactionSync, after its rows were appended. */
       inTransaction?: () => void;
     },
@@ -439,11 +518,13 @@ export class ActorHost extends DurableObject<Env> {
     const diff = diffHeldRefs(actor.id, actor.heldRefs, heldRefs, options.preserve ? root.holder : undefined);
     for (const op of diff) if (op.holder === root.holder) recordTxHold(root.owned, op.target, root.holder);
     const ops = [...(options.before ?? []), ...frame.pendingOps.splice(0), ...diff, ...(options.after ?? [])];
+    const committedAt = Date.now();
     this.ctx.storage.transactionSync(() => {
+      const messages = options.messages?.map((message) => resolveActorMessage(message, committedAt));
       this.#kv.put(SNAPSHOT, next.data);
       this.#kv.put(VERSION, version);
       this.#kv.put(HELD_REFS, [...heldRefs]);
-      this.#outbox.append(ops, options.messages);
+      this.#outbox.append(ops, messages);
       options.inTransaction?.();
     });
     actor.snapshot = next.data;
@@ -507,18 +588,72 @@ export class ActorHost extends DurableObject<Env> {
       this.#kv.put(COLLECTED, true);
       this.#outbox.append(releases);
     });
-    if (collect) this.#killed = true;
+    if (collect) {
+      this.#killed = true;
+      // A live failure never armed a timer; collected delivery retries on its own schedule.
+      this.#deliveryFailure = undefined;
+    }
   }
 
   // ---- delivery ------------------------------------------------------------
 
   async #afterWrite(): Promise<void> {
-    this.#scheduleRetry();
     await this.#flush();
   }
 
-  #scheduleRetry(): void {
-    void this.ctx.storage.setAlarm(Date.now() + RETRY_MS);
+  #scheduleAlarm(): void {
+    const now = Date.now();
+    const inboxDueAt = this.#earliestInboxAlarmAt(now);
+    const retryAt = this.#kv.get(COLLECTED) ? this.#kv.get<number>(COLLECTED_RETRY_AT) : undefined;
+    const dueAt = inboxDueAt === undefined
+      ? retryAt
+      : retryAt === undefined ? inboxDueAt : Math.min(inboxDueAt, retryAt);
+    const alarm = dueAt !== undefined
+      ? this.ctx.storage.setAlarm(Math.max(now, dueAt))
+      : this.ctx.storage.deleteAlarm();
+    void alarm.catch((error) => console.error(`ActorHost ${this.#id}: failed to update alarm`, error));
+  }
+
+  #earliestInboxAlarmAt(now: number): number | undefined {
+    let earliest: number | undefined;
+    for (const [key, value] of this.#kv.list<unknown>({ prefix: INBOX_PREFIX })) {
+      const entry = readStoredInboxMessage(value);
+      let alarmAt: number | undefined;
+      if (entry.dueAt > now) {
+        alarmAt = entry.dueAt;
+      } else {
+        const backstopKey = inboxBackstopKey(key);
+        let backstop = this.#kv.get<InboxBackstop>(backstopKey);
+        if (!backstop && this.#dispatching) {
+          backstop = { attempt: 0, retryAt: now + RETRY_DELAYS_MS[0] };
+          this.#kv.put(backstopKey, backstop);
+        }
+        alarmAt = backstop?.retryAt ?? (backstop ? undefined : now);
+      }
+      if (alarmAt !== undefined && (earliest === undefined || alarmAt < earliest)) earliest = alarmAt;
+    }
+    return earliest;
+  }
+
+  #advanceInboxBackstops(now: number): void {
+    for (const [key, value] of this.#kv.list<unknown>({ prefix: INBOX_PREFIX })) {
+      const backstopKey = inboxBackstopKey(key);
+      const backstop = this.#kv.get<InboxBackstop>(backstopKey);
+      if (!backstop?.retryAt || backstop.retryAt > now) continue;
+      const attempt = backstop.attempt + 1;
+      if (attempt >= RETRY_DELAYS_MS.length) {
+        const { message } = readStoredInboxMessage(value);
+        this.#kv.put(backstopKey, { attempt } satisfies InboxBackstop);
+        console.error(
+          `ActorHost ${this.#id}: inbox row ${key} message ${message.id} action ${message.action} remained in flight after 5 wake-ups; leaving it pending without another alarm`,
+        );
+      } else {
+        this.#kv.put(backstopKey, {
+          attempt,
+          retryAt: now + RETRY_DELAYS_MS[attempt],
+        } satisfies InboxBackstop);
+      }
+    }
   }
 
   /**
@@ -534,6 +669,7 @@ export class ActorHost extends DurableObject<Env> {
    */
   #flush(): Promise<void> {
     if (this.#flushing) return Promise.resolve();
+    if (this.#deliveryFailure) return Promise.resolve();
     let finished!: () => void;
     // Marked busy before the pass starts: a pass that finds nothing to do completes synchronously,
     // and marking afterwards would leave the object busy forever.
@@ -544,6 +680,7 @@ export class ActorHost extends DurableObject<Env> {
         await this.#drainOutbox();
       } finally {
         this.#flushing = undefined;
+        this.#scheduleAlarm();
         finished();
       }
     })();
@@ -557,6 +694,9 @@ export class ActorHost extends DurableObject<Env> {
   #awaitDelivered(seq: number): Promise<void> {
     const pending = this.#outbox.first();
     if (!pending || pending.seq > seq) return Promise.resolve();
+    if (this.#deliveryFailure && this.#deliveryFailure.seq <= seq) {
+      return Promise.reject(this.#deliveryFailure.error);
+    }
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     this.#deliveryWaiters.push({ seq, resolve, reject });
     void this.#flush();
@@ -582,8 +722,27 @@ export class ActorHost extends DurableObject<Env> {
         try {
           await this.#deliver(next);
         } catch (error) {
-          console.error(`ActorHost ${this.#id}: outbox delivery failed, retrying in ${RETRY_MS}ms`, error);
-          this.#scheduleRetry();
+          const targetId = next.row.kind === "message" ? next.row.message.target.id : next.row.target;
+          if (this.#kv.get(COLLECTED)) {
+            const attempt = this.#kv.get<number>(COLLECTED_RETRY_ATTEMPT) ?? 0;
+            const delay = RETRY_DELAYS_MS[attempt];
+            if (delay === undefined) {
+              this.#kv.delete(COLLECTED_RETRY_AT);
+              console.error(
+                `ActorHost ${this.#id}: outbox row ${next.seq} delivery to ${targetId} failed after 5 collected retries; actor storage and holds are left in place`,
+                error,
+              );
+            } else {
+              this.ctx.storage.transactionSync(() => {
+                this.#kv.put(COLLECTED_RETRY_ATTEMPT, attempt + 1);
+                this.#kv.put(COLLECTED_RETRY_AT, Date.now() + delay);
+              });
+              console.error(`ActorHost ${this.#id}: outbox row ${next.seq} delivery to ${targetId} failed`, error);
+            }
+          } else {
+            console.error(`ActorHost ${this.#id}: outbox row ${next.seq} delivery to ${targetId} failed`, error);
+          }
+          this.#deliveryFailure = { seq: next.seq, error };
           this.#settleWaiters(error);
           return;
         }
@@ -598,9 +757,10 @@ export class ActorHost extends DurableObject<Env> {
         this.#settleWaiters();
         return;
       }
-      if (this.#hasInbox()) return;
-      await this.ctx.storage.deleteAlarm();
-      if (!this.#outbox.first()) return;
+      if (!this.#outbox.first()) {
+        this.#scheduleAlarm();
+        return;
+      }
     }
   }
 
@@ -650,14 +810,10 @@ export class ActorHost extends DurableObject<Env> {
     return stubOf(this.#binding(), id);
   }
 
-  #hasInbox(): boolean {
-    for (const _ of this.#kv.list({ prefix: INBOX_PREFIX, limit: 1 })) return true;
-    return false;
-  }
-
   /** Removes a dispatched message and releases its root's tx: holds and its message: holds; call inside transactionSync. */
   #settleInbox({ key, message }: InboxEntry, root: RootTransaction): void {
     this.#kv.delete(key);
+    this.#kv.delete(inboxBackstopKey(key));
     this.#outbox.append([...txReleaseOps(root.owned.values()), ...messageReleaseOps(message)]);
   }
 
@@ -669,10 +825,17 @@ export class ActorHost extends DurableObject<Env> {
       for (;;) {
         const actor = this.#load();
         if (!actor) return;
-        let entry: [string, OutboxMessage] | undefined;
-        for (const item of this.#kv.list<OutboxMessage>({ prefix: INBOX_PREFIX, limit: 1 })) entry = item;
+        let entry: [string, StoredInboxMessage] | undefined;
+        const now = Date.now();
+        for (const [key, value] of this.#kv.list<unknown>({ prefix: INBOX_PREFIX })) {
+          const candidate = readStoredInboxMessage(value);
+          if (candidate.dueAt > now) continue;
+          if (!entry || candidate.dueAt < entry[1].dueAt
+            || (candidate.dueAt === entry[1].dueAt && candidate.sequence < entry[1].sequence)) entry = [key, candidate];
+        }
         if (!entry) return;
-        const [key, message] = entry;
+        const [key, { message }] = entry;
+        this.#scheduleAlarm();
         // Derived from the message, so a run repeated after an eviction releases the same tx: holder.
         const root = actor.core.newRoot(true, `inbox_${message.id}`);
         const inbox: InboxEntry = { key, message };
@@ -693,6 +856,7 @@ export class ActorHost extends DurableObject<Env> {
       }
     } finally {
       this.#dispatching = false;
+      this.#scheduleAlarm();
     }
   }
 }

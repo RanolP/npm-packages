@@ -74,6 +74,20 @@ class Counter extends Actor<Counter, { initial: number }> {
 
 The self-reference exposes only `runDetached(...)`. The runtime delivers the message after the sending action commits and discards it if that action rolls back. Awaited self-calls are not available because waiting for the current actor to call itself would cause reentrancy.
 
+## Schedule a detached message
+
+Call `schedule(...)` on an actor action, then call `runDetached(...)` with the action's arguments.
+
+```ts
+counter.add.schedule({ after: { ms: 1000 } }).runDetached(1);
+counter.add.schedule({ at: new Date("2030-01-01T00:00:00Z") }).runDetached(1);
+this.asRef.add.schedule({ after: { ms: 1000 } }).runDetached(1);
+```
+
+A schedule accepts exactly one of `after.ms` or `at`. `after.ms` is measured from the sending segment's commit. A date in the past becomes eligible immediately. Scheduled messages use the same outbox and rollback rules as other detached messages, and `runDetached(...)` returns `void`.
+
+Plain `runDetached(...)` is exactly `schedule({ after: { ms: 0 } }).runDetached(...)`, and runtimes order messages to one target by due time and then send order. `@mekakucity/days` keeps pending schedules only in memory, while `@mekakucity/durable-object` persists them.
+
 ## External I/O
 
 Use detached actions as an outbox and model external work as a multi-transaction saga.
@@ -144,7 +158,7 @@ Import `ActorRuntime` from `@mekakucity/actors` or the runtime-author entry poin
 - `refreshValues(ref)` refreshes a reference's snapshot values.
 - `invokeRefAction(ref, actionName, args)` sends an action through a reference.
 - `invokeLocalAction(instance, actionName, args, run)` invokes a decorated action on its owning actor.
-- `runDetached(ref, actionName, args)` registers detached delivery with the transaction.
+- `runDetached(ref, actionName, args, schedule)` registers detached delivery with the transaction.
 - `readSnapshotValue(ref, key)` reads cached state.
 
 The `@mekakucity/actors/runtime` entry point also exports storage-independent building blocks for runtime implementations:

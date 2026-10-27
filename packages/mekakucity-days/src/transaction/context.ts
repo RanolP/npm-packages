@@ -1,5 +1,5 @@
 import type { HolderOp, TxHold } from "@mekakucity/actors/runtime";
-import type { OutboxMessage } from "../outbox/message.js";
+import type { OutboxMessage, PendingOutboxMessage } from "../outbox/message.js";
 import type { ActorRecord, InMemoryStore } from "../ref/in-memory-store.js";
 import { NoActiveTransactionError } from "@mekakucity/actors";
 import type { RuntimeMemory } from "../runtime/memory.js";
@@ -30,7 +30,7 @@ export interface ActionFrame {
   readonly startVersion: number;
   readonly initialState: StateData;
   readonly spawnedIds: Set<string>;
-  readonly outbox: OutboxMessage[];
+  readonly outbox: PendingOutboxMessage[];
   readonly pendingOps: HolderOp[];
   baseline: StateData;
 }

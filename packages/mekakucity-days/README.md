@@ -37,6 +37,8 @@ const value = await runtime.run(async () => {
 
 Each `InMemoryActorRuntime` owns its actors, named actor bindings, mailboxes, snapshots, outbox, and reference lifecycle. Each `run` opens one transaction context; same-runtime nesting joins it, while another runtime remains isolated. Actor actions commit in segments, and a later failure does not restore segments that already committed. Create a fresh instance when a test needs isolated runtime state.
 
+Scheduled detached messages use process timers. They remain pending only while the `InMemoryActorRuntime` process is running; restarting the process discards them.
+
 ## Development scope
 
 The runtime keeps all state in the current process. It implements transactions, rollback, detached delivery, actor collection, and snapshot caching, but it does not provide durable storage or distributed routing. Use a production `ActorRuntime` implementation when actors must survive process loss or run across hosts.

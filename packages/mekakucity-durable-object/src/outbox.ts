@@ -1,5 +1,5 @@
 import type { HolderOp } from "@mekakucity/actors/runtime";
-import type { OutboxMessage, OutboxRow } from "./protocol.js";
+import type { DueOutboxMessage, OutboxRow } from "./protocol.js";
 
 const ROW_PREFIX = "outbox:";
 const SEQUENCE_KEY = "outbox-sequence";
@@ -24,7 +24,7 @@ export class Outbox {
   constructor(private readonly kv: SyncKvStorage) {}
 
   /** Returns the sequence of the last row written so far, this append's rows included. */
-  append(ops: readonly HolderOp[], messages: readonly OutboxMessage[] = [], extra: readonly OutboxRow[] = []): number {
+  append(ops: readonly HolderOp[], messages: readonly DueOutboxMessage[] = [], extra: readonly OutboxRow[] = []): number {
     const rows: OutboxRow[] = [...groupOps(ops), ...messages.map((message) => ({ kind: "message", message }) as const), ...extra];
     let sequence = this.kv.get<number>(SEQUENCE_KEY) ?? 0;
     if (rows.length === 0) return sequence;

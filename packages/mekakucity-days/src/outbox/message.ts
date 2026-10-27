@@ -1,6 +1,10 @@
-import type { ActorDescriptor } from "@mekakucity/actors";
+import type {
+  ActorDescriptor,
+  DueActorMessage,
+  PendingActorMessage,
+} from "@mekakucity/actors/runtime";
 
-export interface OutboxMessage {
+interface OutboxMessageData {
   readonly id: string;
   readonly target: ActorDescriptor;
   readonly action: string;
@@ -9,3 +13,10 @@ export interface OutboxMessage {
   /** Sent from root context: durable only if the root itself succeeds. */
   readonly rootContext?: true;
 }
+
+export type PendingOutboxMessage = PendingActorMessage<OutboxMessageData>;
+export type DueOutboxMessage = DueActorMessage<OutboxMessageData>;
+export type OutboxMessage = PendingOutboxMessage | DueOutboxMessage;
+
+export const isDueOutboxMessage = (message: OutboxMessage): message is DueOutboxMessage =>
+  typeof message.dueAt === "number";

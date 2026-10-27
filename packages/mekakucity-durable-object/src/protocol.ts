@@ -1,9 +1,9 @@
 import type { ActorDescriptor } from "@mekakucity/actors";
-import type { HolderOp, TxHold } from "@mekakucity/actors/runtime";
+import type { DueActorMessage, HolderOp, PendingActorMessage, TxHold } from "@mekakucity/actors/runtime";
 import type { ActorHost } from "./host.js";
 
 /** A detached action call, persisted in the sender's outbox and then in the target's inbox. */
-export interface OutboxMessage {
+interface OutboxMessageData {
   readonly id: string;
   readonly target: ActorDescriptor;
   readonly action: string;
@@ -11,10 +11,13 @@ export interface OutboxMessage {
   readonly heldIds: readonly string[];
 }
 
+export type PendingOutboxMessage = PendingActorMessage<OutboxMessageData>;
+export type DueOutboxMessage = DueActorMessage<OutboxMessageData>;
+
 /** One durable outbox row; a row is deleted only after its target acknowledged it. */
 export type OutboxRow =
   | { readonly kind: "ops"; readonly target: string; readonly ops: readonly HolderOp[] }
-  | { readonly kind: "message"; readonly message: OutboxMessage }
+  | { readonly kind: "message"; readonly message: DueOutboxMessage }
   /** Last row a collected sender sends each actor it delivered messages to: drop its `seen:` watermark. */
   | { readonly kind: "forget-seen"; readonly target: string };
 
@@ -88,7 +91,7 @@ export interface ActorHostRpc {
   view(): Promise<Outcome<ActorView | null>>;
   invoke(request: InvokeRequest): Promise<Outcome<InvokeResult>>;
   applyHolderOps(ops: HolderOp[]): Promise<void>;
-  deliverMessage(message: OutboxMessage, origin?: MessageOrigin): Promise<DeliveryAck>;
+  deliverMessage(message: DueOutboxMessage, origin?: MessageOrigin): Promise<DeliveryAck>;
   forgetSender(sender: string): Promise<void>;
 }
 

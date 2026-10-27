@@ -1,7 +1,8 @@
 import { Actor } from "../core/actor.js";
 import { metadataFor } from "../action/decorators.js";
 import { ActorRuntime, type ActorDescriptor } from "../runtime/actor-runtime.js";
-import type { ActorRef } from "./types.js";
+import { immediateActorSchedule, normalizeActorSchedule } from "./schedule.js";
+import type { ActorRef, ActorScheduleOptions } from "./types.js";
 
 export interface ActorRefSurface {
   readonly values: Iterable<string>;
@@ -49,7 +50,17 @@ export const createActorRef = <T extends Actor<unknown, unknown>>(
       ActorRuntime.current(`Invoke ${ref.type}.${key}`).invokeRefAction(ref, key, args);
     Object.defineProperty(invoke, "runDetached", {
       value: (...args: unknown[]) =>
-        ActorRuntime.current(`Detach ${ref.type}.${key}`).runDetached(ref, key, args),
+        ActorRuntime.current(`Detach ${ref.type}.${key}`).runDetached(ref, key, args, immediateActorSchedule),
+      enumerable: false,
+    });
+    Object.defineProperty(invoke, "schedule", {
+      value: (options: ActorScheduleOptions) => {
+        const schedule = normalizeActorSchedule(options);
+        return Object.freeze({
+          runDetached: (...args: unknown[]) =>
+            ActorRuntime.current(`Schedule ${ref.type}.${key}`).runDetached(ref, key, args, schedule),
+        });
+      },
       enumerable: false,
     });
     Object.defineProperty(ref, key, { value: invoke, enumerable: false, configurable: false });
