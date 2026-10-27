@@ -1,5 +1,11 @@
 # @mekakucity/actors
 
+## 0.3.0
+
+### Minor Changes
+
+- 2532358: Add augmentable, per-action actor context with caller and detached-origin propagation plus transaction hooks to the actor contract, in-memory runtime, and Durable Object runtime.
+
 ## 0.2.0
 
 ### Minor Changes
