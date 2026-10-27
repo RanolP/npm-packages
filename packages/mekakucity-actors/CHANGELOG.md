@@ -1,5 +1,11 @@
 # @mekakucity/actors
 
+## 0.4.0
+
+### Minor Changes
+
+- 009b1c4: Add actor read observation scopes, include the committed actor, version, and accumulated changed state fields in after-commit hooks, and expose a best-effort runtime commit feed for every persisted action version across both runtimes and their conformance suite.
+
 ## 0.3.0
 
 ### Minor Changes
