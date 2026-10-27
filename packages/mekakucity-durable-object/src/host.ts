@@ -535,6 +535,11 @@ export class ActorHost extends DurableObject<Env> {
     const carried = parent.invocation.carried;
     const origin = parent.invocation.origin;
     const frame = this.#makeFrame(actor, parent.root, parent, new Set(parent.chain), carried, origin);
+    const changedAtEntry = new Set([...parent.changed, ...Object.keys(changedStateFields(
+      frame.segment.baseline,
+      frame.initialState,
+      actor,
+    ))]);
     return core.execution.run({ root: frame.root, frame, chain: frame.chain, carried }, async () => {
       let result: unknown;
       try {
@@ -548,7 +553,7 @@ export class ActorHost extends DurableObject<Env> {
         await this.#emit([...holds, ...spawns]);
       } catch (error) {
         await this.#rollback(actor, frame, [...discardSpawnOps(frame.spawnedIds, frame.id), ...frame.outbox.flatMap((message) => messageReleaseOps(message))]);
-        for (const key of frame.changed) parent.changed.add(key);
+        for (const key of changedAtEntry) parent.changed.add(key);
         await frame.invocation.afterRollback(error);
         throw error;
       }

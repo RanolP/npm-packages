@@ -89,6 +89,7 @@ class ContextForwarder extends Actor<ContextForwarder, { target: ActorRef<Contex
 @actor("verify/context/Hooks")
 class ContextHooks extends Actor<ContextHooks, {}> {
   @state accessor committed = 0;
+  @state accessor nested = 0;
 
   @action async succeed(): Promise<void> {
     this.committed = 1;
@@ -115,6 +116,18 @@ class ContextHooks extends Actor<ContextHooks, {}> {
     this.committed = 5;
     await target.read();
     this.committed = previous;
+    this.ctx.reportCommitInfo();
+  }
+
+  @action async writeNestedThenFail(target: ActorRef<ContextProbe>): Promise<void> {
+    this.nested = 1;
+    await target.read();
+    throw new Error("nested action failed");
+  }
+
+  @action async reportOuterWriteAfterNestedFailure(target: ActorRef<ContextProbe>): Promise<void> {
+    this.committed = 6;
+    await this.writeNestedThenFail(target).catch(() => undefined);
     this.ctx.reportCommitInfo();
   }
 
@@ -260,6 +273,25 @@ export const actorContextSuite = (
         );
         expect(rollbackError.message).toContain("reported action failed");
         expect(rollbackError.message).not.toContain("commit-info:");
+      });
+    });
+
+    contextIt("keeps outer changed fields after a failed nested action", async () => {
+      const provider: ActorContextProvider<ContextCarried> = {
+        carry: () => ({ requestId: "nested-failure" }),
+        build: buildContext,
+      };
+      const runtime = createWithContext(provider);
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ContextHooks, {});
+        const target = await Actor.spawn(ContextProbe, {});
+        const actor = { type: ref.type, id: ref.id };
+
+        const error = await ref.reportOuterWriteAfterNestedFailure(target).then(
+          () => { throw new Error("Expected afterCommit to reject"); },
+          errorFrom,
+        );
+        expect(commitInfoFrom(error)).toEqual({ actor, version: 3, changed: ["committed"] });
       });
     });
 
