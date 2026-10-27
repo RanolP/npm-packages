@@ -3,6 +3,7 @@ import {
   action,
   actor,
   state,
+  type ActorCommitInfo,
   type ActorContextProvider,
   type ActorDescriptor,
   type ActorRef,
@@ -16,6 +17,7 @@ declare module "@mekakucity/actors" {
     readonly requestId: string | undefined;
     readonly origin: ActorDescriptor | undefined;
     registerConformanceHooks(): void;
+    reportCommitInfo(): void;
   }
 }
 
@@ -29,6 +31,11 @@ const buildContext: ActorContextProvider<ContextCarried>["build"] = (carried, ho
   registerConformanceHooks() {
     hooks.onRollback(() => { throw new Error("rollback hook ran"); });
     hooks.afterCommit(() => { throw new Error("afterCommit hook ran"); });
+  },
+  reportCommitInfo() {
+    hooks.afterCommit.bestEffort((info) => {
+      throw new Error(`commit-info:${JSON.stringify(info)}`);
+    });
   },
 });
 
@@ -82,6 +89,7 @@ class ContextForwarder extends Actor<ContextForwarder, { target: ActorRef<Contex
 @actor("verify/context/Hooks")
 class ContextHooks extends Actor<ContextHooks, {}> {
   @state accessor committed = 0;
+  @state accessor nested = 0;
 
   @action async succeed(): Promise<void> {
     this.committed = 1;
@@ -93,14 +101,79 @@ class ContextHooks extends Actor<ContextHooks, {}> {
     this.ctx.registerConformanceHooks();
     throw new Error("action failed");
   }
+
+  @action async reportNoop(): Promise<void> {
+    this.ctx.reportCommitInfo();
+  }
+
+  @action async reportWrite(): Promise<void> {
+    this.committed = 3;
+    this.ctx.reportCommitInfo();
+  }
+
+  @action async reportWriteCallRevert(target: ActorRef<ContextProbe>): Promise<void> {
+    const previous = this.committed;
+    this.committed = 5;
+    await target.read();
+    this.committed = previous;
+    this.ctx.reportCommitInfo();
+  }
+
+  @action async writeNestedThenFail(target: ActorRef<ContextProbe>): Promise<void> {
+    this.nested = 1;
+    await target.read();
+    throw new Error("nested action failed");
+  }
+
+  @action async reportOuterWriteAfterNestedFailure(target: ActorRef<ContextProbe>): Promise<void> {
+    this.committed = 6;
+    await this.writeNestedThenFail(target).catch(() => undefined);
+    this.ctx.reportCommitInfo();
+  }
+
+  @action async reportRollback(): Promise<void> {
+    this.committed = 4;
+    this.ctx.reportCommitInfo();
+    throw new Error("reported action failed");
+  }
 }
+
+const commitInfoFrom = (error: Error): ActorCommitInfo => {
+  const marker = "commit-info:";
+  const start = error.message.indexOf(marker);
+  if (start < 0) throw error;
+  const parsed: unknown = JSON.parse(error.message.slice(start + marker.length));
+  if (typeof parsed !== "object" || parsed === null
+    || !("actor" in parsed) || typeof parsed.actor !== "object" || parsed.actor === null
+    || !("type" in parsed.actor) || typeof parsed.actor.type !== "string"
+    || !("id" in parsed.actor) || typeof parsed.actor.id !== "string"
+    || !("version" in parsed) || typeof parsed.version !== "number"
+    || !("changed" in parsed) || !Array.isArray(parsed.changed)
+    || !parsed.changed.every((key) => typeof key === "string")) {
+    throw new TypeError("Expected a serialized ActorCommitInfo");
+  }
+  return {
+    actor: { type: parsed.actor.type, id: parsed.actor.id },
+    version: parsed.version,
+    changed: [...parsed.changed],
+  };
+};
+
+const errorFrom = (error: unknown): Error => {
+  if (error instanceof Error) return error;
+  throw new TypeError(`Expected an Error, received ${String(error)}`);
+};
 
 export const actorContextSuite = (
   _factory: () => ActorRuntime,
   hooks?: ActorRuntimeConformanceHooks,
 ): void => {
   describe("@mekakucity/actors context", () => {
-    const contextIt = hooks?.createWithContext ? it : it.skip;
+    const configuredCreateWithContext = hooks?.createWithContext;
+    const contextIt = configuredCreateWithContext ? it : it.skip;
+    const createWithContext = configuredCreateWithContext ?? (() => {
+      throw new Error("This runtime does not provide context conformance support");
+    });
 
     contextIt("isolates sequential calls from different callers", async () => {
       let current: ContextCarried | undefined;
@@ -108,7 +181,7 @@ export const actorContextSuite = (
         carry: () => current,
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       await runtime.run(async () => {
         const ref = await Actor.spawn(ContextProbe, {});
         current = { requestId: "first" };
@@ -128,7 +201,7 @@ export const actorContextSuite = (
         },
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       await runtime.run(async () => {
         const target = await Actor.spawn(ContextProbe, {});
         const forwarder = await Actor.spawn(ContextForwarder, { target });
@@ -142,12 +215,12 @@ export const actorContextSuite = (
         carry: () => ({ requestId: "hooks" }),
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       await runtime.run(async () => {
         const ref = await Actor.spawn(ContextHooks, {});
         const commitError = await ref.succeed().then(
           () => { throw new Error("Expected afterCommit to reject"); },
-          (error: unknown) => error as Error,
+          errorFrom,
         );
         expect(commitError.message).toContain("afterCommit hook ran");
         expect(commitError.message).not.toContain("rollback hook ran");
@@ -156,7 +229,7 @@ export const actorContextSuite = (
 
         const rollbackError = await ref.fail().then(
           () => { throw new Error("Expected the action to reject"); },
-          (error: unknown) => error as Error,
+          errorFrom,
         );
         expect(rollbackError.message).toMatch(/action failed.*rollback hook ran/);
         expect(rollbackError.message).not.toContain("afterCommit hook ran");
@@ -165,12 +238,69 @@ export const actorContextSuite = (
       });
     });
 
+    contextIt("reports committed versions and net changed state fields", async () => {
+      const provider: ActorContextProvider<ContextCarried> = {
+        carry: () => ({ requestId: "commit-info" }),
+        build: buildContext,
+      };
+      const runtime = createWithContext(provider);
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ContextHooks, {});
+        const actor = { type: ref.type, id: ref.id };
+
+        const noopError = await ref.reportNoop().then(
+          () => { throw new Error("Expected afterCommit to reject"); },
+          errorFrom,
+        );
+        expect(commitInfoFrom(noopError)).toEqual({ actor, version: 1, changed: [] });
+
+        const writeError = await ref.reportWrite().then(
+          () => { throw new Error("Expected afterCommit to reject"); },
+          errorFrom,
+        );
+        expect(commitInfoFrom(writeError)).toEqual({ actor, version: 2, changed: ["committed"] });
+
+        const target = await Actor.spawn(ContextProbe, {});
+        const revertedError = await ref.reportWriteCallRevert(target).then(
+          () => { throw new Error("Expected afterCommit to reject"); },
+          errorFrom,
+        );
+        expect(commitInfoFrom(revertedError)).toEqual({ actor, version: 4, changed: ["committed"] });
+
+        const rollbackError = await ref.reportRollback().then(
+          () => { throw new Error("Expected the action to reject"); },
+          errorFrom,
+        );
+        expect(rollbackError.message).toContain("reported action failed");
+        expect(rollbackError.message).not.toContain("commit-info:");
+      });
+    });
+
+    contextIt("keeps outer changed fields after a failed nested action", async () => {
+      const provider: ActorContextProvider<ContextCarried> = {
+        carry: () => ({ requestId: "nested-failure" }),
+        build: buildContext,
+      };
+      const runtime = createWithContext(provider);
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ContextHooks, {});
+        const target = await Actor.spawn(ContextProbe, {});
+        const actor = { type: ref.type, id: ref.id };
+
+        const error = await ref.reportOuterWriteAfterNestedFailure(target).then(
+          () => { throw new Error("Expected afterCommit to reject"); },
+          errorFrom,
+        );
+        expect(commitInfoFrom(error)).toEqual({ actor, version: 3, changed: ["committed"] });
+      });
+    });
+
     contextIt("builds a detached action context with undefined carried data", async () => {
       const provider: ActorContextProvider<ContextCarried> = {
         carry: () => ({ requestId: "caller" }),
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       const target = await runtime.run(async () => {
         const ref = await Actor.ofNamed(ContextProbe, "detached-target").orSpawn(() => ({}));
         await ref.queueDetached(ref);
@@ -197,7 +327,7 @@ export const actorContextSuite = (
         carry: () => ({ requestId: "caller" }),
         build: buildContext,
       };
-      const runtime = hooks!.createWithContext!(provider);
+      const runtime = createWithContext(provider);
       const { target, forwarder } = await runtime.run(async () => {
         const target = await Actor.ofNamed(ContextProbe, "origin-target").orSpawn(() => ({}));
         const forwarder = await Actor.ofNamed(ContextForwarder, "origin-forwarder").orSpawn(() => ({ target }));

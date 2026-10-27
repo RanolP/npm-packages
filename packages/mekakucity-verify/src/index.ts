@@ -5,6 +5,7 @@ import { selfReferenceSuite } from "./self-reference.js";
 import { stateAndGenericsSuite } from "./state-and-generics.js";
 import { transactionSuite } from "./transactions.js";
 import { actorContextSuite } from "./context.js";
+import { observationSuite } from "./observation.js";
 import type { ActorRuntimeConformanceHooks } from "./runtime.js";
 import type { ActorRuntime } from "@mekakucity/actors/runtime";
 
@@ -19,6 +20,7 @@ export const actorRuntimeConformance = (
   stateAndGenericsSuite(factory, hooks);
   runtimeScopeSuite(factory, hooks);
   actorContextSuite(factory, hooks);
+  observationSuite(factory, hooks);
 };
 
 export type { ActorRuntimeConformanceHooks } from "./runtime.js";

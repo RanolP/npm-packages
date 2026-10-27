@@ -63,10 +63,11 @@ export const createActor = async <T extends Actor<unknown, unknown>>(
     txHolder: txHolder(context.root.id, initialFrameId),
     startVersion: 0,
     initialState: first.state,
-    baseline: first.state,
+    segment: { baseline: first.state },
     spawnedIds: new Set(),
     outbox: [],
     pendingOps: [],
+    changed: new Set(),
   };
   if (!named && context.frame) context.frame.spawnedIds.add(id);
   await updateStateHolders(memory, initialFrame, first.state);

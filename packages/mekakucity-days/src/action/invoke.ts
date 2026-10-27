@@ -70,7 +70,7 @@ export const invokeActorAction = async (
   const chain = new Set(inheritedChain);
   chain.add(actorId);
 
-  return withMailbox(record, async () => {
+  return withMailbox(record, () => memory.withoutReadObservers(async () => {
     const method = metadataFor(record.instance).actions.get(actionName);
     if (!method) throw new ActorRuntimeError(`Unknown actor action ${actionName}`);
     const frame = makeFrame(memory, record, root, parent, chain, carried, origin);
@@ -106,10 +106,10 @@ export const invokeActorAction = async (
         await frame.invocation.afterRollback(error);
         throw error;
       }
-      await frame.invocation.afterCommit();
+      await frame.invocation.afterCommit(record.version, [...frame.changed]);
       return reply;
     });
-  });
+  }));
 };
 
 export const applyReply = async (memory: RuntimeMemory, reply: ActionReply, id: string): Promise<void> => {
@@ -128,7 +128,7 @@ export const invokeRefAction = async (
   ref: ActorDescriptor,
   actionName: string,
   args: unknown[],
-): Promise<unknown> => {
+): Promise<{ value: unknown; version: number }> => {
   const context = currentExecution(memory, `Call actor action ${actionName}`);
   const sameActor = context.frame?.record.id === ref.id;
   const carried = context.frame
@@ -154,5 +154,5 @@ export const invokeRefAction = async (
   );
   memory.lastReplyForTest = reply;
   if (!sameActor) await applyReply(memory, reply, ref.id);
-  return reply.value;
+  return { value: reply.value, version: reply.version };
 };

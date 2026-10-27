@@ -41,20 +41,24 @@ export class InMemoryActorRuntime extends ActorRuntime {
 
   constructor(options: InMemoryActorRuntimeOptions = {}) {
     super();
-    this.#memory = createRuntimeMemory(options.contextProvider);
-    this.#memory.backend.setDeliveryHandler((message) => {
+    this.#memory = createRuntimeMemory(
+      options.contextProvider,
+      (info) => this.emitCommit(info),
+      (work) => this.withoutReadObservers(work),
+    );
+    this.#memory.backend.setDeliveryHandler((message) => this.withoutReadObservers(() => {
       this.#pendingDeliveries.push({ message, sequence: ++this.#deliverySequence });
       this.#pendingDeliveries.sort((left, right) =>
         left.message.dueAt - right.message.dueAt || left.sequence - right.sequence);
       this.#startDeliveryInterval();
       this.#tickDeliveries();
       return Promise.resolve();
-    });
+    }));
   }
 
   #startDeliveryInterval(): void {
     if (this.#deliveryInterval !== undefined || this.#pendingDeliveries.length === 0) return;
-    this.#deliveryInterval = setInterval(() => this.#tickDeliveries(), DELIVERY_TICK_MS);
+    this.#deliveryInterval = setInterval(() => this.withoutReadObservers(() => this.#tickDeliveries()), DELIVERY_TICK_MS);
     this.#deliveryInterval.unref();
   }
 
@@ -69,10 +73,10 @@ export class InMemoryActorRuntime extends ActorRuntime {
       const wait = delivery.message.dueAt - now;
       if (wait > DELIVERY_TICK_MS) break;
       if (delivery.timeout !== undefined) continue;
-      delivery.timeout = setTimeout(() => {
+      delivery.timeout = setTimeout(() => this.withoutReadObservers(() => {
         delivery.timeout = undefined;
         this.#drainDeliveries();
-      }, Math.max(0, wait));
+      }), Math.max(0, wait));
       delivery.timeout.unref();
     }
   }
@@ -108,8 +112,10 @@ export class InMemoryActorRuntime extends ActorRuntime {
     return namedActor(this.#memory, Type, key);
   }
 
-  refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
-    return refreshActorValues(this.#memory, ref);
+  async refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
+    const { ref: refreshed, version } = await refreshActorValues(this.#memory, ref);
+    this.observeRead(refreshed, version);
+    return refreshed;
   }
 
   selfDescriptorOf(instance: object): ActorDescriptor {
@@ -128,8 +134,10 @@ export class InMemoryActorRuntime extends ActorRuntime {
     return context.frame.invocation.get();
   }
 
-  invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
-    return invokeRefAction(this.#memory, ref, actionName, args);
+  async invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
+    const { value, version } = await invokeRefAction(this.#memory, ref, actionName, args);
+    this.observeRead(ref, version);
+    return value;
   }
 
   invokeLocalAction(instance: object, actionName: string, args: unknown[], run: () => unknown): unknown {
@@ -141,7 +149,14 @@ export class InMemoryActorRuntime extends ActorRuntime {
   }
 
   readSnapshotValue(ref: ActorDescriptor, key: string): unknown {
-    return readSnapshotValue(this.#memory, ref, key);
+    const value = readSnapshotValue(this.#memory, ref, key);
+    this.#observeRef(ref);
+    return value;
+  }
+
+  #observeRef(ref: ActorDescriptor): void {
+    const snapshot = this.#memory.snapshotCache.get(ref.id);
+    this.observeRead(ref, snapshot?.data ? snapshot.version : undefined);
   }
 
   [inMemoryActorRuntimeTestHooks](): InMemoryActorRuntimeTestHooks {

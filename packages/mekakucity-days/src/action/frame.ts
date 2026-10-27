@@ -31,10 +31,11 @@ export const makeFrame = (
     txHolder: parent?.record === record ? parent.txHolder : txHolder(root.id, id),
     startVersion: record.version,
     initialState: structuredClone(state),
-    baseline: state,
+    segment: parent?.record === record ? parent.segment : { baseline: state },
     spawnedIds: new Set(),
     outbox: [],
     pendingOps: [],
+    changed: new Set(),
   };
 };
 
@@ -42,7 +43,10 @@ export const mergeFrame = (_memory: RuntimeMemory, frame: ActionFrame): void => 
   if (frame.parent) frame.parent.pendingOps.push(...frame.pendingOps);
   // Only a same-actor nested frame shares its parent's segment; a cross-actor callee's segment already committed,
   // so its messages are durable and must not be rolled back with the caller.
-  if (frame.parent?.record === frame.record) frame.parent.outbox.push(...frame.outbox);
+  if (frame.parent?.record === frame.record) {
+    frame.parent.outbox.push(...frame.outbox);
+    for (const key of frame.changed) frame.parent.changed.add(key);
+  }
   else {
     const committedAt = Date.now();
     frame.root.outbox.push(...frame.outbox.map((message) => resolveActorMessage(message, committedAt)));

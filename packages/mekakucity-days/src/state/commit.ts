@@ -1,6 +1,6 @@
-import { isDeepStrictEqual } from "node:util";
 import { ActorStateSerializationError } from "@mekakucity/actors";
 import {
+  changedStateFields,
   cloneOrThrow,
   createSnapshot,
   restoreState,
@@ -38,15 +38,20 @@ export const commitSegment = async (
   preserveDroppedRefs = false,
 ): Promise<void> => {
   const next = createSnapshot(frame.record);
-  const changed = stateFields(frame.record)
-    .some((key) => !isDeepStrictEqual(frame.baseline[key], next.state[key]));
-  if (!force && !changed) return;
+  const changed = Object.keys(changedStateFields(frame.segment.baseline, next.state, frame.record));
+  if (!force && changed.length === 0) return;
   const nextVersion = frame.record.version + 1;
   const persisted = structuredClone(next.data);
   await frame.root.backend.persist(frame.record.id, persisted, nextVersion);
+  for (const key of changed) frame.changed.add(key);
   cacheSnapshot(memory, frame.record.id, nextVersion, next.data);
+  memory.emitCommit({
+    actor: { type: frame.record.type, id: frame.record.id },
+    version: nextVersion,
+    changed,
+  });
+  frame.segment.baseline = next.state;
   await updateStateHolders(memory, frame, next.state, preserveDroppedRefs);
-  frame.baseline = next.state;
 };
 
 export const rollbackAction = async (memory: RuntimeMemory, frame: ActionFrame): Promise<void> => {
@@ -54,6 +59,7 @@ export const rollbackAction = async (memory: RuntimeMemory, frame: ActionFrame):
   restoreState(frame.record, frame.initialState, (value) => hydrateRefs(memory, value));
   if (frame.record.version <= frame.startVersion) return;
   const restored = createSnapshot(frame.record);
+  const changed = Object.keys(changedStateFields(frame.segment.baseline, restored.state, frame.record));
   const rollbackVersion = frame.record.version + 1;
   const persisted = cloneOrThrow(
     restored.data,
@@ -61,6 +67,11 @@ export const rollbackAction = async (memory: RuntimeMemory, frame: ActionFrame):
   );
   await frame.root.backend.persist(frame.record.id, persisted, rollbackVersion);
   cacheSnapshot(memory, frame.record.id, rollbackVersion, restored.data);
+  memory.emitCommit({
+    actor: { type: frame.record.type, id: frame.record.id },
+    version: rollbackVersion,
+    changed,
+  });
   await updateStateHolders(memory, frame, restored.state);
-  frame.baseline = restored.state;
+  frame.segment.baseline = restored.state;
 };

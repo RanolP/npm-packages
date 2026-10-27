@@ -1,4 +1,5 @@
 import { NoActiveTransactionError } from "@mekakucity/actors";
+import { changedStateFields } from "@mekakucity/actors/runtime";
 import { rollbackOutbox } from "../outbox/delivery.js";
 import { discardFrameSpawns, drainHolderOps, holdForTx, settleFrameSpawns } from "../ref/lifecycle.js";
 import { collectRefs, hydrateRefs } from "../ref/surface.js";
@@ -24,6 +25,11 @@ export const invokeNested = async (
     parent.invocation.carried,
     parent.invocation.origin,
   );
+  const changedAtEntry = new Set([...parent.changed, ...Object.keys(changedStateFields(
+    frame.segment.baseline,
+    frame.initialState,
+    frame.record,
+  ))]);
   return memory.execution.run(
     { root: frame.root, frame, chain: frame.chain },
     async () => {
@@ -38,6 +44,7 @@ export const invokeNested = async (
         await drainHolderOps(frame.root);
       } catch (error) {
         await rollbackAction(memory, frame);
+        for (const key of changedAtEntry) parent.changed.add(key);
         discardFrameSpawns(frame);
         rollbackOutbox(frame.root, frame.outbox);
         await drainHolderOps(frame.root);

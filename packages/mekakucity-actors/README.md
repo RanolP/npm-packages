@@ -53,6 +53,33 @@ Reading a getter through an `ActorRef` evaluates the class getter with the refer
 
 Calling an actor API outside `runtime.run(...)` throws `NoActiveActorRuntimeError`. A nested `run` on the same runtime joins the open transaction; a nested `run` on another runtime opens an isolated transaction owned by that runtime.
 
+## Observe actor reads and commits
+
+`Actor.observeReads(work, onRead)` reports each actor reference read performed directly by `work`. State reads report the cached snapshot version. Action calls report the version in that call's reply, and `Actor.refreshValues(ref)` reports the version returned by that refresh. Reads performed inside a called actor or a detached delivery are outside the observation scope.
+
+```ts
+const result = await Actor.observeReads(
+  () => counter.add(1),
+  ({ actor, version }) => recordDependency(actor, version),
+);
+```
+
+`ActorRuntime.onCommit(listener)` subscribes to commits made by actors hosted in that runtime's isolate and returns an unsubscribe function. The listener receives an `ActorCommitInfo` for each persisted action segment, final action commit, and compensating rollback commit:
+
+```ts
+interface ActorCommitInfo {
+  readonly actor: ActorDescriptor;
+  readonly version: number;
+  readonly changed: string[];
+}
+
+type ActorCommitListener = (info: ActorCommitInfo) => void | Promise<void>;
+
+const unsubscribe = runtime.onCommit((info) => invalidateReads(info));
+```
+
+Each feed event lists the fields changed by that persisted version. Listener invocation is synchronous, best-effort, and at most once, but a returned promise is not awaited. Listener throws and promise rejections do not fail the action. In the Durable Object runtime, configure `createActorHost({ onCommit })` to receive the feed inside each actor's host isolate; `contextProvider` remains an independent optional setting. Delivering those events to another isolate requires an application-owned transport.
+
 ## Add application context to actor calls
 
 Augment `ActorContext` with application-owned values, then configure the runtime with an `ActorContextProvider`. `carry()` captures the serializable caller value for each top-level action call. `build()` reconstructs `this.ctx` lazily for the receiving action.
@@ -83,7 +110,7 @@ An actor reads the current invocation through `this.ctx`. The value is cached on
 
 The fourth `build()` argument is the detached-chain origin. It is `undefined` for a call chain started outside an actor. A detached invocation receives its own descriptor, and nested actor calls retain that descriptor for the rest of the chain.
 
-`build()` can register transaction work through `hooks.onRollback(fn)` and `hooks.afterCommit(fn)`. Rollback hooks run in reverse registration order after state rollback; commit hooks run in registration order after state commit. The runtime awaits every applicable hook. If one or more hooks fail, the action call rejects with `ActorTransactionHookError`; a committed action stays committed, and a rollback failure retains the original action error as its cause.
+`build()` can register transaction work through `hooks.onRollback(fn)` and `hooks.afterCommit(fn)`. `hooks.afterCommit.bestEffort(fn)` is an explicit alias that names the hook's at-most-once delivery guarantee. Rollback hooks run in reverse registration order after state rollback; commit hooks run in registration order after the final action commit. An after-commit hook receives the final version and the union of state fields changed by every persisted segment in that action. The runtime awaits every applicable hook. If one or more hooks fail, the action call rejects with `ActorTransactionHookError`; a committed action stays committed, and a rollback failure retains the original action error as its cause.
 
 Reading `this.ctx` outside an active action or without a configured provider throws `ActorContextUnavailableError`.
 

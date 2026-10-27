@@ -12,6 +12,7 @@ import {
   type Actor,
   type ActorContext,
   type ActorContextProvider,
+  type ActorCommitInfo,
   type ActorConstructor,
   type ActorDescriptor,
   type ActorDetachedSchedule,
@@ -82,7 +83,8 @@ export interface ActionFrame {
   readonly spawnedIds: Set<string>;
   readonly outbox: PendingOutboxMessage[];
   readonly pendingOps: HolderOp[];
-  baseline: StateData;
+  readonly changed: Set<string>;
+  readonly segment: { actorId: string; baseline: StateData };
 }
 
 interface Execution {
@@ -117,6 +119,7 @@ export class RuntimeCore {
     readonly binding: DurableObjectNamespace<ActorHost>,
     readonly scope: string,
     readonly enter: <T>(work: () => T) => T,
+    readonly commit: (info: ActorCommitInfo) => void,
     readonly contextProvider?: ActorContextProvider,
   ) {}
 
@@ -310,13 +313,15 @@ export class RuntimeCore {
     };
   }
 
-  async refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
+  async refreshValues<T extends Actor<unknown, unknown>>(
+    ref: ActorRef<T> | ActorDescriptor,
+  ): Promise<{ ref: ActorRef<T>; version: number }> {
     await this.#commitParent(this.current("Actor.refreshValues"));
     const normalized = this.#isOwnRef(ref) ? ref : this.makeRef<T>(ref.type, ref.id);
     const view = unwrap(await this.stub(ref.id).view());
     if (!view) throw new ActorKilledError(ref.id);
     this.cacheView(view);
-    return normalized;
+    return { ref: normalized, version: view.version };
   }
 
   selfDescriptorOf(instance: object): ActorDescriptor {
@@ -332,7 +337,11 @@ export class RuntimeCore {
     return context.frame.invocation.get();
   }
 
-  async invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
+  async invokeRefAction(
+    ref: ActorDescriptor,
+    actionName: string,
+    args: unknown[],
+  ): Promise<{ value: unknown; version: number }> {
     const context = this.current(`Call actor action ${actionName}`);
     const { frame } = context;
     if (frame && this.local?.id === ref.id) {
@@ -340,7 +349,8 @@ export class RuntimeCore {
       const method = metadataFor(instance).actions.get(actionName);
       if (!method) throw new ActorRuntimeError(`Unknown actor action ${actionName}`);
       const hydratedArgs = this.hydrate(args);
-      return this.local.invokeNested(frame, actionName, () => method.apply(instance, hydratedArgs));
+      const value = await this.local.invokeNested(frame, actionName, () => method.apply(instance, hydratedArgs));
+      return { value, version: frame.startVersion };
     }
     if (context.chain.has(ref.id)) throw new ActorReentrancyError(ref.id);
     await this.#commitParent(context);
@@ -364,7 +374,7 @@ export class RuntimeCore {
     for (const { target, holder } of reply.owned) recordTxHold(context.root.owned, target, holder);
     if (frame) for (const id of reply.spawnedIds) frame.spawnedIds.add(id);
     this.cacheView(reply);
-    return this.hydrate(reply.value);
+    return { value: this.hydrate(reply.value), version: reply.version };
   }
 
   invokeLocalAction(instance: object, actionName: string, _args: unknown[], run: () => unknown): unknown {
@@ -426,6 +436,7 @@ export class DurableObjectActorRuntime extends ActorRuntime {
       binding,
       options.scope ?? "default",
       (work) => this.withActiveRuntime(work),
+      (info) => this.emitCommit(info),
       options.contextProvider,
     );
   }
@@ -446,8 +457,10 @@ export class DurableObjectActorRuntime extends ActorRuntime {
     return this.#core.named(Type, key);
   }
 
-  refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
-    return this.#core.refreshValues(ref);
+  async refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
+    const { ref: refreshed, version } = await this.#core.refreshValues(ref);
+    this.observeRead(refreshed, version);
+    return refreshed;
   }
 
   selfDescriptorOf(instance: object): ActorDescriptor {
@@ -458,8 +471,10 @@ export class DurableObjectActorRuntime extends ActorRuntime {
     return this.#core.actorContextOf(instance);
   }
 
-  invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
-    return this.#core.invokeRefAction(ref, actionName, args);
+  async invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
+    const { value, version } = await this.#core.invokeRefAction(ref, actionName, args);
+    this.observeRead(ref, version);
+    return value;
   }
 
   invokeLocalAction(instance: object, actionName: string, args: unknown[], run: () => unknown): unknown {
@@ -471,7 +486,14 @@ export class DurableObjectActorRuntime extends ActorRuntime {
   }
 
   readSnapshotValue(ref: ActorDescriptor, key: string): unknown {
-    return this.#core.readSnapshotValue(ref, key);
+    const value = this.#core.readSnapshotValue(ref, key);
+    this.#observeRef(ref);
+    return value;
+  }
+
+  #observeRef(ref: ActorDescriptor): void {
+    const snapshot = snapshots.get(ref.id);
+    this.observeRead(ref, snapshot?.data ? snapshot.version : undefined);
   }
 }
 
@@ -480,4 +502,9 @@ export const createHostRuntimeCore = (
   binding: DurableObjectNamespace<ActorHost>,
   scope: string,
   contextProvider?: ActorContextProvider,
-): RuntimeCore => coreOf(new DurableObjectActorRuntime(binding, { scope, contextProvider }));
+  onCommit?: (info: ActorCommitInfo) => void,
+): RuntimeCore => {
+  const runtime = new DurableObjectActorRuntime(binding, { scope, contextProvider });
+  if (onCommit) runtime.onCommit(onCommit);
+  return coreOf(runtime);
+};
