@@ -1,5 +1,11 @@
 # @mekakucity/actors
 
+## 0.4.1
+
+### Patch Changes
+
+- c4e62d0: Report the read `@state` field as an optional `key` on actor read observations; a read without `key` depends on the whole actor.
+
 ## 0.4.0
 
 ### Minor Changes
