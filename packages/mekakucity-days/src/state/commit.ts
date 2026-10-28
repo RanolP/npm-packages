@@ -40,16 +40,20 @@ export const commitSegment = async (
   const next = createSnapshot(frame.record);
   const changed = Object.keys(changedStateFields(frame.segment.baseline, next.state, frame.record));
   if (!force && changed.length === 0) return;
-  const nextVersion = frame.record.version + 1;
-  const persisted = structuredClone(next.data);
-  await frame.root.backend.persist(frame.record.id, persisted, nextVersion);
-  for (const key of changed) frame.changed.add(key);
-  cacheSnapshot(memory, frame.record.id, nextVersion, next.data);
-  memory.emitCommit({
-    actor: { type: frame.record.type, id: frame.record.id },
-    version: nextVersion,
-    changed,
-  });
+  // A forced commit with no state change still settles holder ops, but keeps the version:
+  // read observers compare versions, so a read-only action must not look like a write.
+  if (changed.length > 0) {
+    const nextVersion = frame.record.version + 1;
+    const persisted = structuredClone(next.data);
+    await frame.root.backend.persist(frame.record.id, persisted, nextVersion);
+    for (const key of changed) frame.changed.add(key);
+    cacheSnapshot(memory, frame.record.id, nextVersion, next.data);
+    memory.emitCommit({
+      actor: { type: frame.record.type, id: frame.record.id },
+      version: nextVersion,
+      changed,
+    });
+  }
   frame.segment.baseline = next.state;
   await updateStateHolders(memory, frame, next.state, preserveDroppedRefs);
 };

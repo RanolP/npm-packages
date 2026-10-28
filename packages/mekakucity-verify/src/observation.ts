@@ -98,10 +98,45 @@ export const observationSuite = (
 
       const actor = { type: ref.type, id: ref.id };
       expect(reads).toEqual([
+        { actor, version: 0, key: "count" },
         { actor, version: 0 },
-        { actor, version: 1 },
-        { actor, version: 1 },
+        { actor, version: 0 },
       ]);
+    });
+
+    it("keeps the version a later read observes after a read-only action, so read-set consumers see no spurious change, and raises it after a write", async (runtime) => {
+      const reads: ActorReadInfo[] = [];
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ObservationCounter, {});
+        await Actor.observeReads(
+          async () => {
+            await Actor.refreshValues(ref);
+            await ref.noop();
+            await Actor.refreshValues(ref);
+            await ref.increment();
+            await Actor.refreshValues(ref);
+          },
+          (read) => reads.push(read),
+        );
+      });
+
+      expect(reads.map((read) => read.version)).toEqual([0, 0, 0, 1, 1]);
+    });
+
+    it("reports the key of a single-field snapshot read so it differs from a whole-actor read", async (runtime) => {
+      const reads: ActorReadInfo[] = [];
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ObservationCounter, {});
+        await Actor.observeReads(
+          async () => {
+            expect(ref.flag).toBe(false);
+            await ref.noop();
+          },
+          (read) => reads.push(read),
+        );
+      });
+
+      expect(reads.map((read) => read.key)).toEqual(["flag", undefined]);
     });
 
     it("reports only the directly called actor across a cross-actor action", async (runtime) => {
@@ -115,7 +150,7 @@ export const observationSuite = (
         );
         expect(reads).toEqual([{
           actor: { type: caller.type, id: caller.id },
-          version: 1,
+          version: 0,
         }]);
       });
     });
@@ -130,7 +165,7 @@ export const observationSuite = (
         const afterIncrement = await caller.readCommitEvents();
         expect(afterIncrement).toContainEqual({
           actor: { type: caller.type, id: caller.id },
-          version: 2,
+          version: 1,
           changed: ["count"],
         });
 
@@ -138,12 +173,12 @@ export const observationSuite = (
         const afterRevert = await caller.readCommitEvents();
         expect(afterRevert).toContainEqual({
           actor: { type: caller.type, id: caller.id },
-          version: 4,
+          version: 2,
           changed: ["flag"],
         });
         expect(afterRevert).toContainEqual({
           actor: { type: caller.type, id: caller.id },
-          version: 5,
+          version: 3,
           changed: ["flag"],
         });
 
@@ -151,12 +186,12 @@ export const observationSuite = (
         const afterRollback = await caller.readCommitEvents();
         expect(afterRollback).toContainEqual({
           actor: { type: caller.type, id: caller.id },
-          version: 7,
+          version: 4,
           changed: ["flag"],
         });
         expect(afterRollback).toContainEqual({
           actor: { type: caller.type, id: caller.id },
-          version: 8,
+          version: 5,
           changed: ["flag"],
         });
       });
@@ -170,16 +205,16 @@ export const observationSuite = (
 
         await expect(failing.nestedWriteCallFail(failingTarget)).rejects.toThrow("nested-write-call-fail");
         const failedEvents = await failing.readCommitEvents();
+        expect(failedEvents.some((event) => event.version === 1 && event.changed.includes("flag"))).toBe(true);
         expect(failedEvents.some((event) => event.version === 2 && event.changed.includes("flag"))).toBe(true);
-        expect(failedEvents.some((event) => event.version === 3 && event.changed.includes("flag"))).toBe(true);
 
         const resetting = await Actor.spawn(ObservationCounter, {});
         const resettingTarget = await Actor.spawn(ObservationCounter, {});
         await resetting.subscribeToCommits();
         await resetting.nestedWriteCallReset(resettingTarget);
         const resetEvents = await resetting.readCommitEvents();
+        expect(resetEvents.some((event) => event.version === 1 && event.changed.includes("flag"))).toBe(true);
         expect(resetEvents.some((event) => event.version === 2 && event.changed.includes("flag"))).toBe(true);
-        expect(resetEvents.some((event) => event.version === 3 && event.changed.includes("flag"))).toBe(true);
       });
     });
 

@@ -14,6 +14,8 @@ export interface ActorDescriptor {
 export interface ActorReadInfo {
   readonly actor: ActorDescriptor;
   readonly version: number | undefined;
+  /** The `@state` field that was read; absent for a whole-actor read, which depends on every field. */
+  readonly key?: string;
 }
 
 export type ActorReadObserver = (info: ActorReadInfo) => void;
@@ -75,9 +77,10 @@ export abstract class ActorRuntime {
     return activeReadObservers.exit(work);
   }
 
-  protected observeRead(actor: ActorDescriptor, version: number | undefined): void {
+  protected observeRead(actor: ActorDescriptor, version: number | undefined, key?: string): void {
     const descriptor = { type: actor.type, id: actor.id };
-    for (const observer of activeReadObservers.getStore() ?? []) observer({ actor: descriptor, version });
+    const info: ActorReadInfo = key === undefined ? { actor: descriptor, version } : { actor: descriptor, version, key };
+    for (const observer of activeReadObservers.getStore() ?? []) observer(info);
   }
 
   /**

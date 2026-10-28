@@ -150,13 +150,13 @@ export class InMemoryActorRuntime extends ActorRuntime {
 
   readSnapshotValue(ref: ActorDescriptor, key: string): unknown {
     const value = readSnapshotValue(this.#memory, ref, key);
-    this.#observeRef(ref);
+    this.#observeRef(ref, key);
     return value;
   }
 
-  #observeRef(ref: ActorDescriptor): void {
+  #observeRef(ref: ActorDescriptor, key: string): void {
     const snapshot = this.#memory.snapshotCache.get(ref.id);
-    this.observeRead(ref, snapshot?.data ? snapshot.version : undefined);
+    this.observeRead(ref, snapshot?.data ? snapshot.version : undefined, key);
   }
 
   [inMemoryActorRuntimeTestHooks](): InMemoryActorRuntimeTestHooks {
