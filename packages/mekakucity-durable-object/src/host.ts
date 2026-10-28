@@ -584,7 +584,10 @@ export class ActorHost extends DurableObject<Env> {
     const changed = Object.keys(changedStateFields(frame.segment.baseline, next.state, actor));
     if (!options.force && changed.length === 0) return;
     const { root } = frame;
-    const version = actor.version + 1;
+    // A forced commit with no state change still writes its outbox rows and inbox settlement,
+    // but keeps the version: read observers compare versions, so a read-only action must not look like a write.
+    const bump = changed.length > 0;
+    const version = bump ? actor.version + 1 : actor.version;
     const heldRefs = this.#stateRefs(actor, next.state);
     const diff = diffHeldRefs(actor.id, actor.heldRefs, heldRefs, options.preserve ? root.holder : undefined);
     for (const op of diff) if (op.holder === root.holder) recordTxHold(root.owned, op.target, root.holder);
@@ -592,18 +595,20 @@ export class ActorHost extends DurableObject<Env> {
     const committedAt = Date.now();
     this.ctx.storage.transactionSync(() => {
       const messages = options.messages?.map((message) => resolveActorMessage(message, committedAt));
-      this.#kv.put(SNAPSHOT, next.data);
-      this.#kv.put(VERSION, version);
+      if (bump) {
+        this.#kv.put(SNAPSHOT, next.data);
+        this.#kv.put(VERSION, version);
+      }
       this.#kv.put(HELD_REFS, [...heldRefs]);
       this.#outbox.append(ops, messages);
       options.inTransaction?.();
     });
     for (const key of changed) frame.changed.add(key);
-    actor.snapshot = next.data;
+    if (bump) actor.snapshot = next.data;
     actor.version = version;
     actor.heldRefs = heldRefs;
     frame.segment.baseline = next.state;
-    actor.core.commit({ actor: { type: actor.meta.type, id: actor.id }, version, changed });
+    if (bump) actor.core.commit({ actor: { type: actor.meta.type, id: actor.id }, version, changed });
     await this.#afterWrite();
   }
 

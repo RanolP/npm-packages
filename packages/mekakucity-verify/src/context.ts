@@ -252,20 +252,20 @@ export const actorContextSuite = (
           () => { throw new Error("Expected afterCommit to reject"); },
           errorFrom,
         );
-        expect(commitInfoFrom(noopError)).toEqual({ actor, version: 1, changed: [] });
+        expect(commitInfoFrom(noopError)).toEqual({ actor, version: 0, changed: [] });
 
         const writeError = await ref.reportWrite().then(
           () => { throw new Error("Expected afterCommit to reject"); },
           errorFrom,
         );
-        expect(commitInfoFrom(writeError)).toEqual({ actor, version: 2, changed: ["committed"] });
+        expect(commitInfoFrom(writeError)).toEqual({ actor, version: 1, changed: ["committed"] });
 
         const target = await Actor.spawn(ContextProbe, {});
         const revertedError = await ref.reportWriteCallRevert(target).then(
           () => { throw new Error("Expected afterCommit to reject"); },
           errorFrom,
         );
-        expect(commitInfoFrom(revertedError)).toEqual({ actor, version: 4, changed: ["committed"] });
+        expect(commitInfoFrom(revertedError)).toEqual({ actor, version: 3, changed: ["committed"] });
 
         const rollbackError = await ref.reportRollback().then(
           () => { throw new Error("Expected the action to reject"); },
@@ -291,7 +291,7 @@ export const actorContextSuite = (
           () => { throw new Error("Expected afterCommit to reject"); },
           errorFrom,
         );
-        expect(commitInfoFrom(error)).toEqual({ actor, version: 3, changed: ["committed"] });
+        expect(commitInfoFrom(error)).toEqual({ actor, version: 2, changed: ["committed"] });
       });
     });
 
