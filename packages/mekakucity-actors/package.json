@@ -47,6 +47,7 @@
     "typescript": "catalog:",
     "vitest": "^4.1.0"
   },
+  "sideEffects": ["./dist/action/decorators.js"],
   "files": [
     "src/",
     "dist/",
