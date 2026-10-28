@@ -98,10 +98,26 @@ export const observationSuite = (
 
       const actor = { type: ref.type, id: ref.id };
       expect(reads).toEqual([
-        { actor, version: 0 },
+        { actor, version: 0, key: "count" },
         { actor, version: 1 },
         { actor, version: 1 },
       ]);
+    });
+
+    it("reports the key of a single-field snapshot read so it differs from a whole-actor read", async (runtime) => {
+      const reads: ActorReadInfo[] = [];
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ObservationCounter, {});
+        await Actor.observeReads(
+          async () => {
+            expect(ref.flag).toBe(false);
+            await ref.noop();
+          },
+          (read) => reads.push(read),
+        );
+      });
+
+      expect(reads.map((read) => read.key)).toEqual(["flag", undefined]);
     });
 
     it("reports only the directly called actor across a cross-actor action", async (runtime) => {
