@@ -1,3 +1,5 @@
+import "@mekakucity/actors/polyfill";
+
 import { reentrancySuite } from "./reentrancy.js";
 import { refLifecycleSuite } from "./ref-lifecycle.js";
 import { runtimeScopeSuite } from "./runtime-scope.js";

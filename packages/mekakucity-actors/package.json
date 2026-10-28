@@ -11,6 +11,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./polyfill": {
+      "types": "./dist/polyfill.d.ts",
+      "import": "./dist/polyfill.js",
+      "default": "./dist/polyfill.js"
+    },
     "./effect": {
       "types": "./dist/effect/index.d.ts",
       "import": "./dist/effect/index.js",
@@ -47,7 +52,7 @@
     "typescript": "catalog:",
     "vitest": "^4.1.0"
   },
-  "sideEffects": ["./dist/action/decorators.js"],
+  "sideEffects": ["./dist/polyfill.js"],
   "files": [
     "src/",
     "dist/",
