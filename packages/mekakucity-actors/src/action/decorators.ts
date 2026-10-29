@@ -7,11 +7,9 @@ export interface ActorMetadata {
   readonly actions: Map<string, (...args: unknown[]) => unknown>;
 }
 
-// TypeScript's decorator emit passes `context.metadata` only when `Symbol.metadata` exists, and neither Node 24
-// nor workerd defines it yet. esbuild and Babel fall back to `Symbol.for("Symbol.metadata")`, so installing that
-// same symbol makes every compiler hand the decorators one shared metadata object per class. Decorated classes
-// import this module first, so it runs before any of them is defined.
-(Symbol as { metadata?: symbol }).metadata ??= Symbol.for("Symbol.metadata");
+// Decorator transforms fall back to this key when Symbol.metadata is absent. tsc users must import
+// @mekakucity/actors/polyfill before defining actor classes so tsc passes context.metadata.
+const metadataKey: symbol = (Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");
 
 // Keyed by the class's own metadata object, which member decorators receive at class definition time, so a
 // class's members are known before (and without) constructing it: a ref built in an isolate that never hosts
@@ -45,7 +43,7 @@ export const metadataFor = (instanceOrConstructor: object | Function): ActorMeta
   }
   for (const current of chain) {
     // A subclass without decorators of its own inherits Symbol.metadata, so only an own property counts.
-    const metadata = Object.getOwnPropertyDescriptor(current, Symbol.metadata)?.value;
+    const metadata = Object.getOwnPropertyDescriptor(current, metadataKey)?.value;
     const own = metadata ? ownMetadata.get(metadata) : undefined;
     if (!own) continue;
     for (const key of own.state) result.state.add(key);

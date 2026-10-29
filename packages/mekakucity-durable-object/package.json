@@ -37,6 +37,7 @@
     "vitest": "^4.1.0",
     "wrangler": "^4.152.0"
   },
+  "sideEffects": false,
   "files": [
     "src/",
     "dist/",
