@@ -100,8 +100,3 @@ export type ActorSelfRef<T> = {
 };
 
 export type ActorInput<T> = T extends Actor<unknown, infer Input> ? Input : never;
-
-export interface ActorRefInit<T> {
-  orSpawn(factory: () => ActorInput<T> | Promise<ActorInput<T>>): Promise<ActorRef<T>>;
-  orNull(): Promise<ActorRef<T> | null>;
-}

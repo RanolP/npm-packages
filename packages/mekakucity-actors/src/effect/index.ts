@@ -2,6 +2,7 @@ import { Cause, Data, Effect, Exit } from "effect"
 import {
   Actor,
   ActorKilledError as CoreActorKilledError,
+  ActorNotFoundError as CoreActorNotFoundError,
   NoActiveActorRuntimeError as CoreNoActiveActorRuntimeError,
   ActorReentrancyError as CoreActorReentrancyError,
   ActorResultSerializationError as CoreActorResultSerializationError,
@@ -49,6 +50,11 @@ export class ActorKilledError extends Data.TaggedError("ActorKilledError")<{
   readonly message: string
 }> {}
 
+export class ActorNotFoundError extends Data.TaggedError("ActorNotFoundError")<{
+  readonly cause: CoreActorNotFoundError
+  readonly message: string
+}> {}
+
 export class ActorSnapshotUnavailableError extends Data.TaggedError("ActorSnapshotUnavailableError")<{
   readonly cause: CoreActorSnapshotUnavailableError
   readonly message: string
@@ -67,6 +73,7 @@ export type ActorError =
   | ActorResultSerializationError
   | ActorReentrancyError
   | ActorKilledError
+  | ActorNotFoundError
   | ActorSnapshotUnavailableError
 
 export type ActorEffectError = ActorError | UnknownActionError
@@ -87,6 +94,8 @@ type ActionValue<T, Key extends ActionKey<T>> = ActorRefAction<T, Key> extends (
 export interface NamedActorEffect<T extends Actor<T, unknown>> {
   orSpawn(factory: () => ActorInput<T> | Promise<ActorInput<T>>): Effect.Effect<ActorRef<T>, ActorEffectError>
   orNull(): Effect.Effect<ActorRef<T> | null, ActorEffectError>
+  /** Requires an existing actor, for example `Gathering.ofId(id).orThrow(() => gatheringNotFound(id))`. */
+  orThrow(error?: () => unknown): Effect.Effect<ActorRef<T>, ActorEffectError>
 }
 
 class EffectBodyFailure<E> {
@@ -115,6 +124,9 @@ function toActorEffectError(cause: unknown): ActorEffectError {
   }
   if (cause instanceof CoreActorKilledError) {
     return new ActorKilledError({ cause, message: cause.message })
+  }
+  if (cause instanceof CoreActorNotFoundError) {
+    return new ActorNotFoundError({ cause, message: cause.message })
   }
   if (cause instanceof CoreActorSnapshotUnavailableError) {
     return new ActorSnapshotUnavailableError({ cause, message: cause.message })
@@ -157,6 +169,7 @@ function named<T extends Actor<T, unknown>>(Type: ActorClass<T>, key: string): N
   return {
     orSpawn: (factory) => tryActorPromise(() => Actor.ofNamed(Type, key).orSpawn(factory)),
     orNull: () => tryActorPromise(() => Actor.ofNamed(Type, key).orNull()),
+    orThrow: (error) => tryActorPromise(() => Actor.ofNamed(Type, key).orThrow(error)),
   }
 }
 

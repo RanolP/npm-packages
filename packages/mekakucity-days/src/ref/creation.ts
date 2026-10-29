@@ -3,9 +3,13 @@ import type {
   ActorConstructor,
   ActorInput,
   ActorRef,
-  ActorRefInit,
 } from "@mekakucity/actors";
-import { ActorInvocationContext, createSnapshot, recordTxHold, txHolder } from "@mekakucity/actors/runtime";
+import {
+  ActorInvocationContext,
+  createSnapshot,
+  recordTxHold,
+  txHolder,
+} from "@mekakucity/actors/runtime";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import { commitSegment, updateStateHolders } from "../state/commit.js";
 import { cacheSnapshot } from "../state/snapshot.js";
@@ -78,48 +82,24 @@ export const spawnActor = async <T extends Actor<unknown, unknown>>(
   memory: RuntimeMemory,
   Type: ActorConstructor<T>,
   input: ActorInput<T>,
+  key?: string,
 ): Promise<ActorRef<T>> => {
-  const context = currentExecution(memory, "Actor.spawn");
+  const named = key !== undefined;
+  const context = currentExecution(memory, named ? "Actor.ofNamed(...).orSpawn" : "Actor.spawn");
   if (context.frame) await commitSegment(memory, context.frame, false, true);
-  return createActor(memory, Type, input, false);
+  return createActor(memory, Type, input, named, key);
 };
 
-export const namedActor = <T extends Actor<unknown, unknown>>(
+export const resolveNamedActor = async <T extends Actor<unknown, unknown>>(
   memory: RuntimeMemory,
   Type: ActorConstructor<T>,
   key: string,
-): ActorRefInit<T> => {
-  currentExecution(memory, "Actor.ofNamed");
+): Promise<ActorRef<T> | null> => {
+  const context = currentExecution(memory, "Actor.ofNamed(...).orNull");
+  if (context.frame) await commitSegment(memory, context.frame, false, true);
   const type = typeName(Type);
   memory.knownTypes.set(type, Type);
-  return {
-    orSpawn: async (factory) => {
-      const context = currentExecution(memory, "Actor.ofNamed(...).orSpawn");
-      if (context.frame) await commitSegment(memory, context.frame, false, true);
-      const namedKey = `${type}\0${key}`;
-      const pending = memory.namedCreations.get(namedKey);
-      if (pending) return await pending as ActorRef<T>;
-      const creation: Promise<ActorRef<T>> = (async () => {
-        const existingId = await context.root.backend.lookupNamed(type, key);
-        if (existingId) {
-          const existing = await context.root.backend.route(existingId);
-          if (existing) return makeRef<T>(memory, type, existingId);
-        }
-        return createActor(memory, Type, await factory(), true, key);
-      })();
-      memory.namedCreations.set(namedKey, creation);
-      try {
-        return await creation;
-      } finally {
-        if (memory.namedCreations.get(namedKey) === creation) memory.namedCreations.delete(namedKey);
-      }
-    },
-    orNull: async () => {
-      const context = currentExecution(memory, "Actor.ofNamed(...).orNull");
-      if (context.frame) await commitSegment(memory, context.frame, false, true);
-      const id = await context.root.backend.lookupNamed(type, key);
-      const record = id ? await context.root.backend.route(id) : undefined;
-      return record ? makeRef<T>(memory, type, record.id) : null;
-    },
-  };
+  const id = await context.root.backend.lookupNamed(type, key);
+  const record = id ? await context.root.backend.route(id) : undefined;
+  return record ? makeRef<T>(memory, type, record.id) : null;
 };

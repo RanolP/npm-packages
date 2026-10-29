@@ -2,11 +2,11 @@ export { Actor } from "./core/actor.js";
 export { action, state } from "./action/decorators.js";
 export { actor } from "./core/actor-type.js";
 export { ActorResultSerializationError, ActorReentrancyError } from "./action/errors.js";
-export { ActorKilledError, ActorScheduleError, ActorSelfRefUnavailableError } from "./ref/errors.js";
+export { ActorKilledError, ActorNotFoundError, ActorScheduleError, ActorSelfRefUnavailableError } from "./ref/errors.js";
+export { ActorRefInit } from "./ref/named.js";
 export type {
   ActorInput,
   ActorRef,
-  ActorRefInit,
   ActorScheduleOptions,
   ActorSelfRef,
   Cloneable,
