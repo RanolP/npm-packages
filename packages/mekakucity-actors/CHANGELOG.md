@@ -1,5 +1,11 @@
 # @mekakucity/actors
 
+## 0.6.1
+
+### Patch Changes
+
+- 2df7825: `actorClassOrThrow` from `@mekakucity/actors/runtime` now returns `ActorConstructor<Actor<unknown, unknown>>` instead of `Function`, so callers construct the class without a cast.
+
 ## 0.6.0
 
 ### Minor Changes
