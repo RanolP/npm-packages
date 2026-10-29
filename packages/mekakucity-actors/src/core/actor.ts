@@ -82,11 +82,9 @@ export abstract class Actor<Self, Input> {
    *     return Actor.ofNamed(Gathering, id);
    *   }
    *
-   *   // Static constructor: validates input, picks the key, spawns, and returns what callers need.
-   *   static async create(input: GatheringInput): Promise<string> {
-   *     const id = crypto.randomUUID();
-   *     await Gathering.ofId(id).orSpawn(() => input);
-   *     return id;
+   *   // Static constructor: picks the key (and validates input, if any), spawns, and returns the ref.
+   *   static create(input: GatheringInput): Promise<ActorRef<Gathering>> {
+   *     return Gathering.ofId(crypto.randomUUID()).orSpawn(() => input);
    *   }
    * }
    *
