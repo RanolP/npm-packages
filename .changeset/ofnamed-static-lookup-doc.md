@@ -2,4 +2,4 @@
 "@mekakucity/actors": patch
 ---
 
-Document that `Actor.ofNamed` is meant to back a lookup static on the actor class, such as `Gathering.ofId(id)`.
+Document the actor statics that wrap `Actor.ofNamed`: a lookup (`Gathering.ofId(id)`), a static constructor (`Gathering.create(input)`) and a singleton (`Directory.ofMain()`).

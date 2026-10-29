@@ -72,9 +72,31 @@ export abstract class Actor<Self, Input> {
   }
 
   /**
-   * Looks up the actor of `Type` named `key`. Prefer wrapping this in a static on the actor class
-   * (`static ofId(id: string) { return Actor.ofNamed(Gathering, id); }`) and calling `Gathering.ofId(id)`,
-   * so the key format stays with the actor.
+   * Looks up the actor of `Type` named `key`. Call it from statics on the actor class rather than
+   * from application code, so the key format and spawn input stay with the actor:
+   *
+   * ```ts
+   * class Gathering extends Actor<Gathering, GatheringInput> {
+   *   // Lookup: callers write `Gathering.ofId(id).orNull()` or `.orSpawn(...)`.
+   *   static ofId(id: string): ActorRefInit<Gathering> {
+   *     return Actor.ofNamed(Gathering, id);
+   *   }
+   *
+   *   // Static constructor: validates input, picks the key, spawns, and returns what callers need.
+   *   static async create(input: GatheringInput): Promise<string> {
+   *     const id = crypto.randomUUID();
+   *     await Gathering.ofId(id).orSpawn(() => input);
+   *     return id;
+   *   }
+   * }
+   *
+   * class Directory extends Actor<Directory, Record<string, never>> {
+   *   // Singleton: one well-known key, spawned on first use.
+   *   static ofMain(): Promise<ActorRef<Directory>> {
+   *     return Actor.ofNamed(Directory, "main").orSpawn(() => ({}));
+   *   }
+   * }
+   * ```
    */
   static ofNamed<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T> {
     return ActorRuntime.current("Actor.ofNamed").named(Type, key);
