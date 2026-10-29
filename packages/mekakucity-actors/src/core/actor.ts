@@ -71,6 +71,31 @@ export abstract class Actor<Self, Input> {
     return ActorRuntime.current("Actor.spawn").spawn(Type, input);
   }
 
+  /**
+   * Looks up the actor of `Type` named `key`. Call it from statics on the actor class rather than
+   * from application code, so the key format and spawn input stay with the actor:
+   *
+   * ```ts
+   * class Gathering extends Actor<Gathering, GatheringInput> {
+   *   // Lookup: callers write `Gathering.ofId(id).orNull()` or `.orSpawn(...)`.
+   *   static ofId(id: string): ActorRefInit<Gathering> {
+   *     return Actor.ofNamed(Gathering, id);
+   *   }
+   *
+   *   // Static constructor: picks the key (and validates input, if any), spawns, and returns the ref.
+   *   static create(input: GatheringInput): Promise<ActorRef<Gathering>> {
+   *     return Gathering.ofId(crypto.randomUUID()).orSpawn(() => input);
+   *   }
+   * }
+   *
+   * class Directory extends Actor<Directory, Record<string, never>> {
+   *   // Singleton: one well-known key, spawned on first use.
+   *   static ofMain(): Promise<ActorRef<Directory>> {
+   *     return Actor.ofNamed(Directory, "main").orSpawn(() => ({}));
+   *   }
+   * }
+   * ```
+   */
   static ofNamed<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T> {
     return ActorRuntime.current("Actor.ofNamed").named(Type, key);
   }
