@@ -4,6 +4,8 @@ import type { DueOutboxMessage } from "../outbox/message.js";
 export interface ActorRecord {
   readonly id: string;
   readonly type: string;
+  /** The spawn input as a structured clone, so a fork can construct the actor again; see recordInput. */
+  readonly input: RecordedInput;
   readonly instance: object;
   readonly mailbox: { tail: Promise<void> };
   readonly holders: Set<string>;
@@ -13,18 +15,56 @@ export interface ActorRecord {
   killed: boolean;
 }
 
+export type RecordedInput = { readonly value: unknown } | { readonly unclonable: unknown };
+
+/** Spawning keeps accepting inputs structuredClone rejects; only a fork touching that actor fails on them. */
+export const recordInput = (input: unknown): RecordedInput => {
+  try {
+    return { value: structuredClone(input) };
+  } catch (cause) {
+    return { unclonable: cause };
+  }
+};
+
+/**
+ * Actor records and named bindings. A fork's store owns only what it touched: `route` copies a live record
+ * from `base` through `materialize` on first touch, and `tombstones` hide base records the fork killed.
+ */
 export class InMemoryStore {
   private readonly actors = new Map<string, ActorRecord>();
   private readonly named = new Map<string, string>();
+  private readonly tombstones = new Set<string>();
   private deliveryHandler: ((message: DueOutboxMessage) => Promise<void>) | undefined;
+
+  constructor(
+    private readonly base?: InMemoryStore,
+    private readonly materialize?: (record: ActorRecord) => ActorRecord,
+  ) {}
 
   setDeliveryHandler(handler: (message: DueOutboxMessage) => Promise<void>): void {
     this.deliveryHandler = handler;
   }
 
-  async route(id: string): Promise<ActorRecord | undefined> {
+  /** Live record visible to this store without copying it; a base record is returned as is. */
+  private peek(id: string): ActorRecord | undefined {
     const record = this.actors.get(id);
-    return record && !record.killed ? record : undefined;
+    if (record) return record.killed ? undefined : record;
+    if (this.tombstones.has(id)) return undefined;
+    return this.base?.peek(id);
+  }
+
+  private own(id: string): ActorRecord | undefined {
+    const owned = this.actors.get(id);
+    if (owned) return owned.killed ? undefined : owned;
+    const found = this.peek(id);
+    if (!found || !this.materialize) return undefined;
+    const record = this.materialize(found);
+    this.actors.set(id, record);
+    return record;
+  }
+
+  async route(id: string): Promise<ActorRecord | undefined> {
+    return this.own(id);
   }
 
   async register(record: ActorRecord): Promise<void> {
@@ -32,8 +72,8 @@ export class InMemoryStore {
   }
 
   async persist(id: string, snapshot: Readonly<Record<string, unknown>>, version: number): Promise<void> {
-    const record = this.actors.get(id);
-    if (!record || record.killed) throw new Error(`Cannot persist missing actor ${id}`);
+    const record = this.own(id);
+    if (!record) throw new Error(`Cannot persist missing actor ${id}`);
     record.snapshot = snapshot;
     record.version = version;
   }
@@ -43,7 +83,14 @@ export class InMemoryStore {
   }
 
   async lookupNamed(type: string, key: string): Promise<string | undefined> {
-    return this.named.get(`${type}\0${key}`);
+    return this.peekNamed(`${type}\0${key}`);
+  }
+
+  private peekNamed(bindingKey: string): string | undefined {
+    const local = this.named.get(bindingKey);
+    if (local !== undefined) return local;
+    const inherited = this.base?.peekNamed(bindingKey);
+    return inherited !== undefined && !this.tombstones.has(inherited) ? inherited : undefined;
   }
 
   async deliver(message: DueOutboxMessage): Promise<void> {
@@ -60,10 +107,12 @@ export class InMemoryStore {
   }
 
   async kill(id: string): Promise<void> {
+    if (this.base) this.tombstones.add(id);
     const record = this.actors.get(id);
-    if (!record) return;
-    record.killed = true;
-    this.actors.delete(id);
+    if (record) {
+      record.killed = true;
+      this.actors.delete(id);
+    }
     for (const [key, actorId] of this.named) {
       if (actorId === id) this.named.delete(key);
     }

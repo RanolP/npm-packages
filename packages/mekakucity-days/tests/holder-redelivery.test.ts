@@ -5,6 +5,7 @@ import { InMemoryStore, type ActorRecord } from "../src/ref/in-memory-store.js";
 const record = (id: string, holders: string[], heldRefs: string[] = []): ActorRecord => ({
   id,
   type: "T",
+  input: { value: undefined },
   instance: {},
   mailbox: { tail: Promise.resolve() },
   holders: new Set(holders),
