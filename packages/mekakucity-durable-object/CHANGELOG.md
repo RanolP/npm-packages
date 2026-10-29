@@ -1,5 +1,11 @@
 # @mekakucity/durable-object
 
+## 0.4.2
+
+### Patch Changes
+
+- 621cb51: Declare `sideEffects` so bundlers can drop unused imports of these packages. `@mekakucity/days` and `@mekakucity/durable-object` have none. `@mekakucity/actors` no longer installs `Symbol.metadata` when imported; TypeScript `tsc` users can opt in through `@mekakucity/actors/polyfill`.
+
 ## 0.4.1
 
 ### Patch Changes

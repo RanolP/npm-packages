@@ -1,6 +1,6 @@
 {
   "name": "@mekakucity/days",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "In-memory development runtime for @mekakucity/actors",
   "type": "module",
   "main": "./dist/index.js",

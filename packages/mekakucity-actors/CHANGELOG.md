@@ -1,5 +1,15 @@
 # @mekakucity/actors
 
+## 0.5.0
+
+### Minor Changes
+
+- 621cb51: Declare `sideEffects` so bundlers can drop unused imports of these packages. `@mekakucity/days` and `@mekakucity/durable-object` have none. `@mekakucity/actors` no longer installs `Symbol.metadata` when imported; TypeScript `tsc` users can opt in through `@mekakucity/actors/polyfill`.
+
+### Patch Changes
+
+- 3baa6fa: Document the actor statics that wrap `Actor.ofNamed`: a lookup (`Gathering.ofId(id)`), a static constructor (`Gathering.create(input)`) and a singleton (`Directory.ofMain()`).
+
 ## 0.4.1
 
 ### Patch Changes

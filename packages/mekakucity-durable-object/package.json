@@ -1,6 +1,6 @@
 {
   "name": "@mekakucity/durable-object",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Cloudflare Durable Object runtime for @mekakucity/actors",
   "type": "module",
   "main": "./dist/index.js",

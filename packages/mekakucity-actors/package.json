@@ -1,6 +1,6 @@
 {
   "name": "@mekakucity/actors",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Runtime-independent actor contract for TypeScript",
   "type": "module",
   "main": "./dist/index.js",
@@ -52,7 +52,9 @@
     "typescript": "catalog:",
     "vitest": "^4.1.0"
   },
-  "sideEffects": ["./dist/polyfill.js"],
+  "sideEffects": [
+    "./dist/polyfill.js"
+  ],
   "files": [
     "src/",
     "dist/",
