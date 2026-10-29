@@ -23,8 +23,9 @@ export const createRuntimeMemory = (
   contextProvider: ActorContextProvider | undefined,
   emitCommit: (info: ActorCommitInfo) => void,
   withoutReadObservers: <Result>(work: () => Result) => Result,
+  backend = new InMemoryStore(),
 ): RuntimeMemory => ({
-  backend: new InMemoryStore(),
+  backend,
   snapshotCache: new SnapshotCache(),
   knownTypes: new Map(),
   instanceIds: new WeakMap(),

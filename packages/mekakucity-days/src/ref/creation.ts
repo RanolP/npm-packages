@@ -14,7 +14,7 @@ import type { RuntimeMemory } from "../runtime/memory.js";
 import { commitSegment, updateStateHolders } from "../state/commit.js";
 import { cacheBackendSnapshot, cacheSnapshot } from "../state/snapshot.js";
 import { currentExecution, type ActionFrame } from "../transaction/context.js";
-import type { ActorRecord } from "./in-memory-store.js";
+import { recordInput, type ActorRecord } from "./in-memory-store.js";
 import { creationHolder } from "./lifecycle.js";
 import { makeRef, typeName } from "./surface.js";
 
@@ -30,10 +30,12 @@ export const createActor = async <T extends Actor<unknown, unknown>>(
   memory.knownTypes.set(type, Type);
   const id = `actor_${++memory.sequence.actor}`;
   const holder = creationHolder(named, context.root, context.frame, id);
+  const recordedInput = recordInput(input);
   const instance = new Type(input);
   const initial: ActorRecord = {
     id,
     type,
+    input: recordedInput,
     instance,
     mailbox: { tail: Promise.resolve() },
     holders: new Set([holder]),

@@ -1,3 +1,4 @@
+import type { ActorConstructor } from "../runtime/actor-runtime.js";
 import { ActorRuntimeError } from "../runtime/errors.js";
 import type { Actor } from "./actor.js";
 
@@ -49,12 +50,13 @@ export const actorTypeIdOrThrow = (Type: Function): string => {
   return id;
 };
 
-export const actorClassOrThrow = (id: string): Function => {
+export const actorClassOrThrow = (id: string): ActorConstructor<Actor<unknown, unknown>> => {
   const Type = classesById.get(id);
   if (Type === undefined) {
     throw new ActorRuntimeError(
       `Actor type "${id}" is not registered; decorate its class with @actor(${JSON.stringify(id)}) and import the module that defines it`,
     );
   }
-  return Type;
+  // Only @actor writes classesById, and its Class bound is an Actor constructor.
+  return Type as ActorConstructor<Actor<unknown, unknown>>;
 };

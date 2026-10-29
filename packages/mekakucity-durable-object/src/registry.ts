@@ -16,7 +16,7 @@ export const typeNameOf = (Type: Function): string => actorTypeIdOrThrow(Type);
 
 /** Throws when no loaded class is decorated with @actor(type), so a caller never gets a ref without actions. */
 export const lookupType = (type: string): RegisteredType => {
-  const Type = actorClassOrThrow(type) as new (input: unknown) => Actor<unknown, unknown>;
+  const Type = actorClassOrThrow(type);
   // The wire input reaching construct() is the structured clone of the ActorInput a caller passed to
   // spawn/orSpawn for this same type id, which is the input this class's constructor declares.
   return { Type, construct: (input) => new Type(input) };
