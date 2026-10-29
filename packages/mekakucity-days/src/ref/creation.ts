@@ -12,7 +12,7 @@ import {
 } from "@mekakucity/actors/runtime";
 import type { RuntimeMemory } from "../runtime/memory.js";
 import { commitSegment, updateStateHolders } from "../state/commit.js";
-import { cacheSnapshot } from "../state/snapshot.js";
+import { cacheBackendSnapshot, cacheSnapshot } from "../state/snapshot.js";
 import { currentExecution, type ActionFrame } from "../transaction/context.js";
 import type { ActorRecord } from "./in-memory-store.js";
 import { creationHolder } from "./lifecycle.js";
@@ -101,5 +101,7 @@ export const resolveNamedActor = async <T extends Actor<unknown, unknown>>(
   memory.knownTypes.set(type, Type);
   const id = await context.root.backend.lookupNamed(type, key);
   const record = id ? await context.root.backend.route(id) : undefined;
-  return record ? makeRef<T>(memory, type, record.id) : null;
+  if (!record) return null;
+  cacheBackendSnapshot(memory, record);
+  return makeRef<T>(memory, type, record.id);
 };
