@@ -1,6 +1,6 @@
 {
   "name": "@mekakucity/verify",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Runtime conformance suite for @mekakucity/actors",
   "type": "module",
   "main": "./dist/index.js",

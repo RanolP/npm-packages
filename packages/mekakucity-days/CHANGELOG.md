@@ -1,5 +1,15 @@
 # @mekakucity/days
 
+## 0.4.3
+
+### Patch Changes
+
+- b66083a: Add `orThrow` to `Actor.ofNamed(...)`: it returns the existing ref, or throws the caller's error (default `ActorNotFoundError`) when the actor does not exist.
+
+  Runtimes now implement only `resolve` and keyed `spawn`, while the `ActorRefInit` class implements `orNull`, `orSpawn`, and `orThrow` once in core.
+
+- 3b80ac8: Named lookups (`orNull`, `orSpawn` on an existing actor) now cache the actor's snapshot, matching the Durable Object runtime.
+
 ## 0.4.2
 
 ### Patch Changes
