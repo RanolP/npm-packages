@@ -71,6 +71,11 @@ export abstract class Actor<Self, Input> {
     return ActorRuntime.current("Actor.spawn").spawn(Type, input);
   }
 
+  /**
+   * Looks up the actor of `Type` named `key`. Prefer wrapping this in a static on the actor class
+   * (`static ofId(id: string) { return Actor.ofNamed(Gathering, id); }`) and calling `Gathering.ofId(id)`,
+   * so the key format stays with the actor.
+   */
   static ofNamed<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T> {
     return ActorRuntime.current("Actor.ofNamed").named(Type, key);
   }
