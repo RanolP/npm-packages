@@ -18,7 +18,6 @@ import {
   type ActorDetachedSchedule,
   type ActorInput,
   type ActorRef,
-  type ActorRefInit,
 } from "@mekakucity/actors";
 import {
   NAMED_ROOT,
@@ -112,7 +111,6 @@ export interface DurableObjectActorRuntimeOptions {
 export class RuntimeCore {
   readonly execution = new AsyncLocalStorage<Execution>();
   readonly #refs = new WeakSet<object>();
-  readonly #namedCreations = new Map<string, Promise<unknown>>();
   local: LocalActor | undefined;
 
   constructor(
@@ -275,42 +273,26 @@ export class RuntimeCore {
     return this.binding.idFromName(`${this.scope}\0${type}\0${key}`).toString();
   }
 
-  async spawn<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, input: ActorInput<T>): Promise<ActorRef<T>> {
-    await this.#commitParent(this.current("Actor.spawn"));
-    return this.create(Type, input);
+  async spawn<T extends Actor<unknown, unknown>>(
+    Type: ActorConstructor<T>,
+    input: ActorInput<T>,
+    key?: string,
+  ): Promise<ActorRef<T>> {
+    await this.#commitParent(this.current(key === undefined ? "Actor.spawn" : "Actor.ofNamed(...).orSpawn"));
+    return this.create(Type, input, key);
   }
 
-  named<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T> {
-    this.current("Actor.ofNamed");
+  async resolve<T extends Actor<unknown, unknown>>(
+    Type: ActorConstructor<T>,
+    key: string,
+  ): Promise<ActorRef<T> | null> {
+    await this.#commitParent(this.current("Actor.ofNamed(...).orNull"));
     const type = typeNameOf(Type);
     const id = this.namedId(type, key);
-    const lookup = async (): Promise<ActorRef<T> | null> => {
-      const view = unwrap(await this.stub(id).view());
-      if (!view) return null;
-      this.cacheView(view);
-      return this.makeRef<T>(type, id);
-    };
-    return {
-      orSpawn: async (factory) => {
-        await this.#commitParent(this.current("Actor.ofNamed(...).orSpawn"));
-        const pending = this.#namedCreations.get(id);
-        if (pending) {
-          await pending;
-          return this.makeRef<T>(type, id);
-        }
-        const creation = (async () => (await lookup()) ?? this.create(Type, await factory(), key))();
-        this.#namedCreations.set(id, creation);
-        try {
-          return await creation;
-        } finally {
-          if (this.#namedCreations.get(id) === creation) this.#namedCreations.delete(id);
-        }
-      },
-      orNull: async () => {
-        await this.#commitParent(this.current("Actor.ofNamed(...).orNull"));
-        return lookup();
-      },
-    };
+    const view = unwrap(await this.stub(id).view());
+    if (!view) return null;
+    this.cacheView(view);
+    return this.makeRef<T>(type, id);
   }
 
   async refreshValues<T extends Actor<unknown, unknown>>(
@@ -449,12 +431,19 @@ export class DurableObjectActorRuntime extends ActorRuntime {
     return this.withActiveRuntime(() => this.#core.run(work));
   }
 
-  spawn<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, input: ActorInput<T>): Promise<ActorRef<T>> {
-    return this.#core.spawn(Type, input);
+  spawn<T extends Actor<unknown, unknown>>(
+    Type: ActorConstructor<T>,
+    input: ActorInput<T>,
+    key?: string,
+  ): Promise<ActorRef<T>> {
+    return this.#core.spawn(Type, input, key);
   }
 
-  named<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T> {
-    return this.#core.named(Type, key);
+  resolve<T extends Actor<unknown, unknown>>(
+    Type: ActorConstructor<T>,
+    key: string,
+  ): Promise<ActorRef<T> | null> {
+    return this.#core.resolve(Type, key);
   }
 
   async refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {

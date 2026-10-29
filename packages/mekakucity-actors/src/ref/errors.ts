@@ -1,5 +1,14 @@
 import { ActorRuntimeError } from "../runtime/errors.js";
 
+export class ActorNotFoundError extends ActorRuntimeError {
+  constructor(
+    readonly type: string,
+    readonly key: string,
+  ) {
+    super(`Actor ${type} "${key}" does not exist`);
+  }
+}
+
 export class ActorKilledError extends ActorRuntimeError {
   constructor(actorId: string) {
     super(`Actor ${actorId} has been killed`);

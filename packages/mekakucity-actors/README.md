@@ -215,13 +215,15 @@ await runtime.run(async () => {
 
 Orders are named by order ID so the payment gateway can find them in a later transaction. The authorization request leaves the outbox only after the checkout transaction commits. The payment result is applied in its own transaction. Using the order ID as an idempotency key makes redelivery safe for a runtime that supports it. `@mekakucity/days` attempts each detached message once; if its handler fails, it discards the delivery's uncommitted work, releases the message's references, and does not retry.
 
+Use `orNull()` for optional lookups, `orThrow()` when a missing actor should fail with an optional custom error, and `orSpawn()` to create a missing named actor.
+
 ## Implement a runtime
 
 Import `ActorRuntime` from `@mekakucity/actors` or the runtime-author entry point `@mekakucity/actors/runtime`. The contract uses Node's `node:async_hooks` module to scope the active runtime. Implement these abstract members:
 
 - `run(work)` scopes the runtime and creates or joins its transaction context.
-- `spawn(Type, input)` creates an anonymous actor in the active transaction.
-- `named(Type, key)` looks up or creates a named actor.
+- `spawn(Type, input, key?)` creates an actor in the active transaction. A `key` creates a named actor.
+- `resolve(Type, key)` returns the named actor or `null`.
 - `refreshValues(ref)` refreshes a reference's snapshot values.
 - `invokeRefAction(ref, actionName, args)` sends an action through a reference.
 - `invokeLocalAction(instance, actionName, args, run)` invokes a decorated action on its owning actor.

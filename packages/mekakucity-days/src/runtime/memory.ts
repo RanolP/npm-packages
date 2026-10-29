@@ -9,7 +9,6 @@ export interface RuntimeMemory {
   readonly backend: InMemoryStore;
   readonly snapshotCache: SnapshotCache;
   readonly knownTypes: Map<string, ActorConstructor<Actor<unknown, unknown>>>;
-  readonly namedCreations: Map<string, Promise<unknown>>;
   readonly instanceIds: WeakMap<object, string>;
   readonly refs: WeakSet<object>;
   readonly execution: AsyncLocalStorage<ExecutionContext>;
@@ -28,7 +27,6 @@ export const createRuntimeMemory = (
   backend: new InMemoryStore(),
   snapshotCache: new SnapshotCache(),
   knownTypes: new Map(),
-  namedCreations: new Map(),
   instanceIds: new WeakMap(),
   refs: new WeakSet(),
   execution: new AsyncLocalStorage<ExecutionContext>(),

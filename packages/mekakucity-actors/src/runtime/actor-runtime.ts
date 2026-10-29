@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Actor } from "../core/actor.js";
-import type { ActorInput, ActorRef, ActorRefInit } from "../ref/types.js";
+import type { ActorInput, ActorRef } from "../ref/types.js";
 import { ActorRuntimeError, NoActiveActorRuntimeError } from "./errors.js";
 import type { ActorCommitInfo, ActorCommitListener, ActorContext } from "./actor-context.js";
 
@@ -105,8 +105,15 @@ export abstract class ActorRuntime {
   }
 
   abstract run<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>>;
-  abstract spawn<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, input: ActorInput<T>): Promise<ActorRef<T>>;
-  abstract named<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T>;
+  abstract spawn<T extends Actor<unknown, unknown>>(
+    Type: ActorConstructor<T>,
+    input: ActorInput<T>,
+    key?: string,
+  ): Promise<ActorRef<T>>;
+  abstract resolve<T extends Actor<unknown, unknown>>(
+    Type: ActorConstructor<T>,
+    key: string,
+  ): Promise<ActorRef<T> | null>;
   abstract refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>>;
   abstract selfDescriptorOf(instance: object): ActorDescriptor;
   abstract actorContextOf(instance: object): ActorContext;

@@ -1,4 +1,12 @@
-import { Actor, actor, ActorStateSerializationError, NoActiveActorRuntimeError, action, state } from "@mekakucity/actors";
+import {
+  Actor,
+  actor,
+  ActorNotFoundError,
+  ActorStateSerializationError,
+  NoActiveActorRuntimeError,
+  action,
+  state,
+} from "@mekakucity/actors";
 import type { ActorRef } from "@mekakucity/actors";
 import type { ActorRuntime } from "@mekakucity/actors/runtime";
 import { describe, expect } from "vitest";
@@ -232,6 +240,22 @@ export const transactionSuite = (factory: () => ActorRuntime, hooks?: ActorRunti
     await runtime.run(async () => {
       const existing = await Actor.ofNamed(NamedCounter, "singleton").orSpawn(() => ({ count: 3 }));
       expect(existing.count).toBe(1);
+    });
+  });
+
+  it("orThrow returns an existing ref and rejects missing actors with the requested error", async (runtime) => {
+    @actor("verify/transactions/RequiredActor")
+    class RequiredActor extends Actor<RequiredActor, {}> {}
+
+    await runtime.run(async () => {
+      const existing = await Actor.ofNamed(RequiredActor, "existing").orSpawn(() => ({}));
+      expect((await Actor.ofNamed(RequiredActor, "existing").orThrow()).id).toBe(existing.id);
+
+      const requested = new Error("required actor missing");
+      await expect(Actor.ofNamed(RequiredActor, "requested").orThrow(() => requested)).rejects.toBe(requested);
+      await expect(Actor.ofNamed(RequiredActor, "default").orThrow()).rejects.toEqual(
+        new ActorNotFoundError("verify/transactions/RequiredActor", "default"),
+      );
     });
   });
   });

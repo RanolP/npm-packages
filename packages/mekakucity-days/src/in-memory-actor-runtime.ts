@@ -10,12 +10,11 @@ import {
   type ActorDetachedSchedule,
   type ActorInput,
   type ActorRef,
-  type ActorRefInit,
 } from "@mekakucity/actors";
 import { invokeRefAction } from "./action/invoke.js";
 import { invokeLocal } from "./action/nested.js";
 import { dispatchDetached, enqueueDetached } from "./outbox/runtime.js";
-import { namedActor, spawnActor } from "./ref/creation.js";
+import { resolveNamedActor, spawnActor } from "./ref/creation.js";
 import { refreshActorValues, typeName } from "./ref/surface.js";
 import { createRuntimeMemory, type RuntimeMemory } from "./runtime/memory.js";
 import { readSnapshotValue } from "./state/snapshot.js";
@@ -104,12 +103,19 @@ export class InMemoryActorRuntime extends ActorRuntime {
     return this.withActiveRuntime(() => runTransaction(this.#memory, work));
   }
 
-  spawn<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, input: ActorInput<T>): Promise<ActorRef<T>> {
-    return spawnActor(this.#memory, Type, input);
+  spawn<T extends Actor<unknown, unknown>>(
+    Type: ActorConstructor<T>,
+    input: ActorInput<T>,
+    key?: string,
+  ): Promise<ActorRef<T>> {
+    return spawnActor(this.#memory, Type, input, key);
   }
 
-  named<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T> {
-    return namedActor(this.#memory, Type, key);
+  resolve<T extends Actor<unknown, unknown>>(
+    Type: ActorConstructor<T>,
+    key: string,
+  ): Promise<ActorRef<T> | null> {
+    return resolveNamedActor(this.#memory, Type, key);
   }
 
   async refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {

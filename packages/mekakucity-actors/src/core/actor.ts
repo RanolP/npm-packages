@@ -1,7 +1,8 @@
 import { metadataFor } from "../action/decorators.js";
 import { ActorSelfRefUnavailableError } from "../ref/errors.js";
+import { ActorRefInit } from "../ref/named.js";
 import { immediateActorSchedule, normalizeActorSchedule } from "../ref/schedule.js";
-import type { ActorInput, ActorRef, ActorRefInit, ActorScheduleOptions, ActorSelfRef } from "../ref/types.js";
+import type { ActorInput, ActorRef, ActorScheduleOptions, ActorSelfRef } from "../ref/types.js";
 import type {
   ActorDescriptor,
   ActorConstructor,
@@ -77,7 +78,7 @@ export abstract class Actor<Self, Input> {
    *
    * ```ts
    * class Gathering extends Actor<Gathering, GatheringInput> {
-   *   // Lookup: callers write `Gathering.ofId(id).orNull()` or `.orSpawn(...)`.
+   *   // Lookup: callers write `Gathering.ofId(id).orNull()`, `.orThrow()`, or `.orSpawn(...)`.
    *   static ofId(id: string): ActorRefInit<Gathering> {
    *     return Actor.ofNamed(Gathering, id);
    *   }
@@ -97,7 +98,7 @@ export abstract class Actor<Self, Input> {
    * ```
    */
   static ofNamed<T extends Actor<unknown, unknown>>(Type: ActorConstructor<T>, key: string): ActorRefInit<T> {
-    return ActorRuntime.current("Actor.ofNamed").named(Type, key);
+    return new ActorRefInit(ActorRuntime.current("Actor.ofNamed"), Type, key);
   }
 
   static refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>> {
