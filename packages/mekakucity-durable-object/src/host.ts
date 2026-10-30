@@ -4,9 +4,14 @@ import {
   ActorReentrancyError,
   ActorRuntimeError,
   ActorStateSerializationError,
+  parseActorSocketClientFrame,
+  type ActorSocketCall,
+  type ActorSocketServerFrame,
+  type ActorSocketResultSuccess,
   type ActorContextProvider,
   type ActorCommitListener,
   type ActorDescriptor,
+  type ActorEventInfo,
 } from "@mekakucity/actors";
 import {
   ActorInvocationContext,
@@ -21,10 +26,13 @@ import {
   frameHolder,
   messageReleaseOps,
   metadataFor,
+  actorRefSurfaceFor,
   restoreState,
   resolveDueAt,
   settleSpawnOps,
   stateFields,
+  socketJsonValue,
+  socketValuesEqual,
   recordTxHold,
   txReleaseOps,
   resolveActorMessage,
@@ -33,6 +41,13 @@ import {
 import { capture } from "./errors.js";
 import { Outbox } from "./outbox.js";
 import { lookupType } from "./registry.js";
+import {
+  socketAttachmentScope,
+  type ActorHostSocketAttachment,
+  type ActorHostSocketOptions,
+  type StoredSocketCallResult,
+  type StoredSocketLiveValue,
+} from "./socket.js";
 import {
   stubOf,
   type ActorHostRpc,
@@ -78,6 +93,10 @@ const SEEN_PREFIX = "seen:";
  * itself is collected, since nothing tells the sender.
  */
 const SENT_PREFIX = "sent:";
+const SOCKET_CALL_PREFIX = "socket-call:";
+const SOCKET_LIVE_PREFIX = "socket-live:";
+const SOCKET_CALL_TTL_MS = 10 * 60 * 1_000;
+const MAX_SOCKET_LIVE_KEYS = 32;
 
 interface ActorMeta {
   readonly scope: string;
@@ -150,7 +169,7 @@ const readStoredInboxMessage = (value: unknown): StoredInboxMessage => {
   return { message: value.message, dueAt: value.dueAt, sequence: value.sequence };
 };
 
-interface Env {
+export interface ActorHostEnv {
   readonly ACTOR_HOST?: DurableObjectNamespace<ActorHost>;
 }
 
@@ -161,13 +180,14 @@ interface Env {
  * `ACTOR_HOST` (a `new_sqlite_classes` class): actions it runs reach other
  * actors through that binding.
  */
-export class ActorHost extends DurableObject<Env> {
+export class ActorHost<Attachment = unknown, Carried = unknown> extends DurableObject<ActorHostEnv> {
   #actor: HostedActor | undefined;
   #killed = false;
   #mailbox: Promise<void> = Promise.resolve();
   #flushing: Promise<void> | undefined;
   #deliveryFailure: { seq: number; error: unknown } | undefined;
   #dispatching = false;
+  #socketCalls = new Map<string, Promise<ActorSocketResultSuccess>>();
   /** Callers waiting until every outbox row through `seq` was acked (#awaitDelivered). */
   #deliveryWaiters: { seq: number; resolve: () => void; reject: (error: unknown) => void }[] = [];
 
@@ -176,6 +196,10 @@ export class ActorHost extends DurableObject<Env> {
   }
 
   protected get actorCommitListener(): ActorCommitListener | undefined {
+    return undefined;
+  }
+
+  protected get actorSocketOptions(): ActorHostSocketOptions<Attachment, Carried> | undefined {
     return undefined;
   }
 
@@ -197,6 +221,309 @@ export class ActorHost extends DurableObject<Env> {
     return binding;
   }
 
+  override async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("Not found", { status: 404 });
+    }
+    const options = this.actorSocketOptions;
+    if (!options) return new Response("WebSocket upgrades are not enabled", { status: 426 });
+    if (!this.#loadForWork()) return new Response("Actor not found", { status: 404 });
+    const accepted = await options.accept(request);
+    if (accepted instanceof Response) return accepted;
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    this.ctx.acceptWebSocket(server);
+    // Cloudflare caps hibernation attachments at 2 KiB; celld may impose the same bound. Keep this
+    // representation compact and enforce MAX_SOCKET_LIVE_KEYS before every subsequent write.
+    server.serializeAttachment({
+      user: accepted.attachment,
+      scope: accepted.scope,
+      keys: [],
+    } satisfies ActorHostSocketAttachment<Attachment>);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  override async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    const parsed = parseActorSocketClientFrame(message);
+    if (!parsed.ok) {
+      this.#sendSocketFrame(socket, parsed.error);
+      return;
+    }
+    if (parsed.frame.t === "subscribe") {
+      await this.#subscribeSocket(socket, parsed.frame.key);
+      return;
+    }
+    if (parsed.frame.t === "unsubscribe") {
+      const { key } = parsed.frame;
+      await this.#withMailbox(async () => {
+        const attachment = this.#socketAttachment(socket);
+        if (attachment.keys.includes(key)) {
+          this.#writeSocketAttachment(socket, {
+            user: attachment.user,
+            scope: attachment.scope,
+            keys: attachment.keys.filter((candidate) => candidate !== key),
+          });
+        }
+      });
+      return;
+    }
+    const call = parsed.frame;
+    const actor = this.#loadForWork();
+    if (!actor) {
+      this.#sendSocketFrame(socket, { t: "result", id: call.id, ok: false, error: `Actor ${this.#id} was killed` });
+      return;
+    }
+    if (!metadataFor(actor.instance).clientActions.has(call.action)) {
+      this.#sendSocketFrame(socket, {
+        t: "result",
+        id: call.id,
+        ok: false,
+        error: `Actor action ${call.action} is not callable over a socket`,
+      });
+      return;
+    }
+    const attachment = this.#socketAttachment(socket);
+    const scope = await socketAttachmentScope(attachment.scope);
+    const dedupKey = `${scope}:${call.id}`;
+    let inFlight = this.#socketCalls.get(dedupKey);
+    if (!inFlight) {
+      inFlight = this.#runSocketCall(socket, call, scope);
+      this.#socketCalls.set(dedupKey, inFlight);
+    }
+    try {
+      this.#sendSocketFrame(socket, await inFlight);
+    } catch (error) {
+      this.#sendSocketFrame(socket, {
+        t: "result",
+        id: call.id,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      if (this.#socketCalls.get(dedupKey) === inFlight) this.#socketCalls.delete(dedupKey);
+    }
+  }
+
+  #sendSocketFrame(socket: WebSocket, frame: ActorSocketServerFrame): void {
+    const message = JSON.stringify(frame);
+    try {
+      socket.send(message);
+    } catch {
+      // The peer may close while its action is running; there is no socket state to retain.
+    }
+  }
+
+  #socketAttachment(socket: WebSocket): ActorHostSocketAttachment<Attachment> {
+    const attachment = socket.deserializeAttachment() as Partial<ActorHostSocketAttachment<Attachment>> | undefined;
+    const keys = attachment?.keys;
+    return {
+      user: attachment?.user as Attachment,
+      scope: typeof attachment?.scope === "string" ? attachment.scope : "",
+      keys: Array.isArray(keys)
+        ? keys.filter((key): key is string => typeof key === "string")
+        : [],
+    };
+  }
+
+  #writeSocketAttachment(socket: WebSocket, attachment: ActorHostSocketAttachment<Attachment>): void {
+    // Cloudflare caps hibernation attachments at 2 KiB; the key count keeps subscription growth bounded.
+    socket.serializeAttachment(attachment);
+  }
+
+  #socketLiveKeys(actor: HostedActor): Set<string> {
+    const surface = actorRefSurfaceFor(actor.instance.constructor);
+    return new Set([...surface.values, ...[...surface.getters].map(([key]) => key)]);
+  }
+
+  #readSocketLiveValue(actor: HostedActor, key: string): unknown {
+    const surface = actorRefSurfaceFor(actor.instance.constructor);
+    if ([...surface.values].includes(key)) {
+      return actor.core.cloneResult(actor.id, `live key ${key}`, (actor.instance as Record<string, unknown>)[key]);
+    }
+    const ref: ActorDescriptor & Record<string, unknown> = { type: actor.meta.type, id: actor.id };
+    for (const stateKey of surface.values) {
+      Object.defineProperty(ref, stateKey, {
+        get: () => (actor.instance as Record<string, unknown>)[stateKey],
+      });
+    }
+    for (const [getterKey, getter] of surface.getters) {
+      Object.defineProperty(ref, getterKey, { get: () => getter.call(ref) });
+    }
+    for (const actionKey of surface.actions) {
+      Object.defineProperty(ref, actionKey, { value: () => {
+        throw new ActorRuntimeError(`Getter ${key} cannot invoke actor action ${actionKey}`);
+      } });
+    }
+    return actor.core.cloneResult(actor.id, `live key ${key}`, ref[key]);
+  }
+
+  async #subscribeSocket(socket: WebSocket, key: string): Promise<void> {
+    await this.#withMailbox(async () => {
+      const actor = this.#loadForWork();
+      if (!actor) throw new ActorKilledError(this.#id);
+      if (!this.#socketLiveKeys(actor).has(key)) {
+        this.#sendSocketFrame(socket, { t: "result", id: "", ok: false, error: `Unknown actor live key ${key}` });
+        return;
+      }
+      const attachment = this.#socketAttachment(socket);
+      if (!attachment.keys.includes(key)) {
+        if (attachment.keys.length >= MAX_SOCKET_LIVE_KEYS) {
+          this.#sendSocketFrame(socket, {
+            t: "result",
+            id: "",
+            ok: false,
+            error: `Actor socket subscriptions are limited to ${MAX_SOCKET_LIVE_KEYS} keys`,
+          });
+          return;
+        }
+        this.#writeSocketAttachment(socket, {
+          user: attachment.user,
+          scope: attachment.scope,
+          keys: [...attachment.keys, key],
+        });
+      }
+      try {
+        const value = socketJsonValue(this.#readSocketLiveValue(actor, key), `Actor live key ${key}`);
+        this.#kv.put(`${SOCKET_LIVE_PREFIX}${key}`, { value, version: actor.version } satisfies StoredSocketLiveValue);
+        this.#sendSocketFrame(socket, { t: "value", key, value, version: actor.version });
+      } catch (error) {
+        this.#sendSocketFrame(socket, {
+          t: "result",
+          id: "",
+          ok: false,
+          error: `Actor live key ${key} failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    });
+  }
+
+  async #runSocketCall(
+    socket: WebSocket,
+    call: ActorSocketCall,
+    scope: string,
+  ): Promise<ActorSocketResultSuccess> {
+    const actor = this.#loadForWork();
+    if (!actor) throw new ActorKilledError(this.#id);
+    const now = Date.now();
+    const storageKey = `${SOCKET_CALL_PREFIX}${scope}:${call.id}`;
+    const stored = this.#kv.get<StoredSocketCallResult>(storageKey);
+    if (stored && stored.expiresAt > now) return stored.result;
+    const root = actor.core.newRoot(false, undefined, call.id);
+    try {
+      const result = await this.#withMailbox(async () => {
+        const current = this.#kv.get<StoredSocketCallResult>(storageKey);
+        if (current && current.expiresAt > Date.now()) return current.result;
+        const carried = this.actorSocketOptions?.carried(this.#socketAttachment(socket).user);
+        const { value } = await this.#runTop(
+          actor,
+          root,
+          new Set([actor.id]),
+          undefined,
+          call.action,
+          [...call.args],
+          carried,
+          undefined,
+          {
+            holdResult: false,
+            inTransaction: (actionValue) => {
+              const wireValue = actionValue === undefined
+                ? undefined
+                : socketJsonValue(actionValue, `Actor socket action ${call.action} result`);
+              const committed = { t: "result", id: call.id, ok: true, value: wireValue } as const;
+              const committedAt = Date.now();
+              for (const [key, entry] of this.#kv.list<StoredSocketCallResult>({ prefix: SOCKET_CALL_PREFIX })) {
+                if (entry.expiresAt <= committedAt) this.#kv.delete(key);
+              }
+              this.#kv.put(storageKey, {
+                expiresAt: committedAt + SOCKET_CALL_TTL_MS,
+                result: committed,
+              } satisfies StoredSocketCallResult);
+            },
+          },
+        );
+        return {
+          t: "result",
+          id: call.id,
+          ok: true,
+          value: value === undefined
+            ? undefined
+            : socketJsonValue(value, `Actor socket action ${call.action} result`),
+        } satisfies ActorSocketResultSuccess;
+      });
+      await this.#emit(txReleaseOps(root.owned.values()));
+      return result;
+    } catch (error) {
+      await this.#emit(txReleaseOps(root.owned.values()));
+      throw error;
+    }
+  }
+
+  #broadcastEvent(info: ActorEventInfo): void {
+    let frame: ActorSocketServerFrame;
+    try {
+      frame = {
+        t: "event",
+        name: info.name,
+        payload: socketJsonValue(info.payload, `Actor event ${info.name} payload`),
+      };
+    } catch (error) {
+      frame = {
+        t: "result",
+        id: "",
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    for (const socket of this.ctx.getWebSockets()) this.#sendSocketFrame(socket, frame);
+  }
+
+  #broadcastLiveValues(actor: HostedActor): void {
+    const subscriptions = new Map<string, WebSocket[]>();
+    let sockets: WebSocket[];
+    try {
+      sockets = this.ctx.getWebSockets();
+    } catch {
+      return;
+    }
+    for (const socket of sockets) {
+      let keys: string[];
+      try {
+        keys = this.#socketAttachment(socket).keys;
+      } catch {
+        continue;
+      }
+      for (const key of keys) {
+        const sockets = subscriptions.get(key);
+        if (sockets) sockets.push(socket);
+        else subscriptions.set(key, [socket]);
+      }
+    }
+    for (const [key, sockets] of subscriptions) {
+      try {
+        if (!this.#socketLiveKeys(actor).has(key)) continue;
+        const value = socketJsonValue(this.#readSocketLiveValue(actor, key), `Actor live key ${key}`);
+        const storageKey = `${SOCKET_LIVE_PREFIX}${key}`;
+        const previous = this.#kv.get<StoredSocketLiveValue>(storageKey);
+        if (previous && socketValuesEqual(previous.value, value)) continue;
+        this.#kv.put(storageKey, { value, version: actor.version } satisfies StoredSocketLiveValue);
+        for (const socket of sockets) this.#sendSocketFrame(socket, {
+          t: "value",
+          key,
+          value,
+          version: actor.version,
+        });
+      } catch (error) {
+        const message = `Actor live key ${key} failed: ${error instanceof Error ? error.message : String(error)}`;
+        for (const socket of sockets) this.#sendSocketFrame(socket, {
+          t: "result",
+          id: "",
+          ok: false,
+          error: message,
+        });
+      }
+    }
+  }
+
   // ---- RPC surface ---------------------------------------------------------
 
   create(request: CreateRequest): Promise<Outcome<ActorView>> {
@@ -211,6 +538,7 @@ export class ActorHost extends DurableObject<Env> {
         request.scope,
         this.actorContextProvider,
         this.actorCommitListener,
+        (info) => this.#broadcastEvent(info),
       );
       const Type = lookupType(request.type);
       const meta: ActorMeta = { scope: request.scope, type: request.type, named: request.named, input: request.input };
@@ -385,7 +713,13 @@ export class ActorHost extends DurableObject<Env> {
       return undefined;
     }
     for (const [, value] of this.#kv.list<unknown>({ prefix: INBOX_PREFIX })) readStoredInboxMessage(value);
-    const core = createHostRuntimeCore(this.#binding(), meta.scope, this.actorContextProvider, this.actorCommitListener);
+    const core = createHostRuntimeCore(
+      this.#binding(),
+      meta.scope,
+      this.actorContextProvider,
+      this.actorCommitListener,
+      (info) => this.#broadcastEvent(info),
+    );
     const Type = lookupType(meta.type);
     const snapshot = this.#kv.get<StateData>(SNAPSHOT) ?? {};
     const actor: HostedActor = {
@@ -486,7 +820,11 @@ export class ActorHost extends DurableObject<Env> {
     args: unknown[],
     carried: unknown,
     origin?: ActorDescriptor,
-    options: { holdResult: boolean; settleInbox?: InboxEntry } = { holdResult: true },
+    options: {
+      holdResult: boolean;
+      settleInbox?: InboxEntry;
+      inTransaction?: (value: unknown) => void;
+    } = { holdResult: true },
   ): Promise<{ value: unknown; spawnedIds: string[] }> {
     const { core } = actor;
     const method = metadataFor(actor.instance).actions.get(actionName);
@@ -504,7 +842,10 @@ export class ActorHost extends DurableObject<Env> {
           before: options.holdResult ? this.#holdForTx(actor, root, value) : [],
           after: settleSpawnOps(frame.spawnedIds, frame.id, parentFrameId),
           messages: frame.outbox.splice(0),
-          inTransaction: settleInbox && (() => this.#settleInbox(settleInbox, root)),
+          inTransaction: () => {
+            if (settleInbox) this.#settleInbox(settleInbox, root);
+            options.inTransaction?.(value);
+          },
         });
         result = { value, spawnedIds: parentFrameId ? [...frame.spawnedIds] : [] };
       } catch (error) {
@@ -608,7 +949,10 @@ export class ActorHost extends DurableObject<Env> {
     actor.version = version;
     actor.heldRefs = heldRefs;
     frame.segment.baseline = next.state;
-    if (bump) actor.core.commit({ actor: { type: actor.meta.type, id: actor.id }, version, changed });
+    if (bump) {
+      actor.core.commit({ actor: { type: actor.meta.type, id: actor.id }, version, changed });
+      this.#broadcastLiveValues(actor);
+    }
     await this.#afterWrite();
   }
 
@@ -636,6 +980,7 @@ export class ActorHost extends DurableObject<Env> {
     actor.heldRefs = heldRefs;
     frame.segment.baseline = restored.state;
     actor.core.commit({ actor: { type: actor.meta.type, id: actor.id }, version, changed });
+    this.#broadcastLiveValues(actor);
     await this.#afterWrite();
   }
 
@@ -950,17 +1295,23 @@ const viewOf = (actor: HostedActor): ActorView => ({
   snapshot: actor.snapshot,
 });
 
-export interface ActorHostOptions {
+export interface ActorHostOptions<Attachment = unknown, Carried = unknown> {
   readonly contextProvider?: ActorContextProvider;
   readonly onCommit?: ActorCommitListener;
+  readonly socket?: ActorHostSocketOptions<Attachment, Carried>;
 }
 
 /** Creates the Durable Object class that rebuilds application context inside each ActorHost isolate. */
-export const createActorHost = (options: ActorHostOptions): typeof ActorHost => class extends ActorHost {
+export const createActorHost = <Attachment = unknown, Carried = unknown>(
+  options: ActorHostOptions<Attachment, Carried>,
+): typeof ActorHost<Attachment, Carried> => class extends ActorHost<Attachment, Carried> {
   protected override get actorContextProvider(): ActorContextProvider | undefined {
     return options.contextProvider;
   }
   protected override get actorCommitListener(): ActorCommitListener | undefined {
     return options.onCommit;
+  }
+  protected override get actorSocketOptions(): ActorHostSocketOptions<Attachment, Carried> | undefined {
+    return options.socket;
   }
 };

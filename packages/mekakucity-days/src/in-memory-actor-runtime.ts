@@ -4,6 +4,7 @@ import {
   ActorRuntime,
   ActorRuntimeError,
   ActorSelfRefUnavailableError,
+  NoActiveTransactionError,
   type ActorConstructor,
   type ActorContext,
   type ActorContextProvider,
@@ -12,19 +13,20 @@ import {
   type ActorInput,
   type ActorRef,
 } from "@mekakucity/actors";
-import { actorClassOrThrow, restoreState } from "@mekakucity/actors/runtime";
-import { invokeRefAction } from "./action/invoke.js";
+import { actorClassOrThrow, restoreState, socketJsonValue } from "@mekakucity/actors/runtime";
+import { applyReply, invokeActorAction, invokeRefAction } from "./action/invoke.js";
 import { invokeLocal } from "./action/nested.js";
 import { dispatchDetached, enqueueDetached } from "./outbox/runtime.js";
 import { resolveNamedActor, spawnActor } from "./ref/creation.js";
 import { hydrateRefs, refreshActorValues, typeName } from "./ref/surface.js";
 import { InMemoryStore, type ActorRecord } from "./ref/in-memory-store.js";
 import { createRuntimeMemory, type RuntimeMemory } from "./runtime/memory.js";
-import { readSnapshotValue } from "./state/snapshot.js";
+import { readSnapshotValue, snapshotVersion } from "./state/snapshot.js";
 import { inMemoryActorRuntimeTestHooks, type InMemoryActorRuntimeTestHooks } from "./testing.js";
 import { currentExecution } from "./transaction/context.js";
-import { runTransaction } from "./transaction/root.js";
+import { finishRoot, newRoot, runTransaction } from "./transaction/root.js";
 import type { DueOutboxMessage } from "./outbox/message.js";
+import { socketRead, socketRuntime, type SocketRuntime, type SocketValue } from "./socket-internal.js";
 
 interface FrozenDelivery {
   readonly message: Omit<DueOutboxMessage, "dueAt">;
@@ -45,7 +47,7 @@ interface PendingDelivery {
   timeout?: ReturnType<typeof setTimeout>;
 }
 
-export class InMemoryActorRuntime extends ActorRuntime implements Disposable, AsyncDisposable {
+export class InMemoryActorRuntime extends ActorRuntime implements Disposable, AsyncDisposable, SocketRuntime {
   readonly #options: InMemoryActorRuntimeOptions;
   #memory: RuntimeMemory;
   readonly #pendingDeliveries: PendingDelivery[] = [];
@@ -282,6 +284,58 @@ export class InMemoryActorRuntime extends ActorRuntime implements Disposable, As
       throw new ActorContextUnavailableError();
     }
     return context.frame.invocation.get();
+  }
+
+  registerEvent(instance: object, name: string, payload: unknown): void {
+    const actor = this.selfDescriptorOf(instance);
+    const context = currentExecution(this.#memory, "Emit actor event");
+    if (!context.frame) throw new NoActiveTransactionError("Emit actor event outside its owning actor");
+    context.frame.invocation.afterCommitBestEffort(() => this.emitEvent({ actor, name, payload }));
+  }
+
+  async [socketRuntime](
+    actor: ActorDescriptor,
+    actionName: string,
+    args: unknown[],
+    carried: unknown,
+  ): Promise<unknown> {
+    this.#assertUsable("receive a socket call");
+    this.#activeTransactions += 1;
+    return this.withActiveRuntime(async () => {
+      const root = newRoot(this.#memory);
+      try {
+        const reply = await this.#memory.execution.run({ root, chain: new Set() }, () => invokeActorAction(
+          this.#memory,
+          root,
+          actor.id,
+          actionName,
+          args,
+          undefined,
+          new Set(),
+          snapshotVersion(this.#memory, actor.id),
+          carried,
+          undefined,
+          (value) => value === undefined
+            ? undefined
+            : socketJsonValue(value, `Actor socket action ${actionName} result`),
+        ));
+        await applyReply(this.#memory, reply, actor.id);
+        await finishRoot(this.#memory, root, true);
+        this.observeRead(actor, reply.version);
+        return reply.value;
+      } catch (error) {
+        await finishRoot(this.#memory, root, false);
+        throw error;
+      }
+    }).finally(() => { this.#activeTransactions -= 1; });
+  }
+
+  async [socketRead](actor: ActorDescriptor, key: string): Promise<SocketValue> {
+    return this.run(async () => {
+      const { ref, version } = await refreshActorValues(this.#memory, actor);
+      const value = (ref as ActorDescriptor & Record<string, unknown>)[key];
+      return { value: structuredClone(value), version };
+    });
   }
 
   async invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {

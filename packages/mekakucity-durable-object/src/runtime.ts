@@ -16,6 +16,7 @@ import {
   type ActorConstructor,
   type ActorDescriptor,
   type ActorDetachedSchedule,
+  type ActorEventInfo,
   type ActorInput,
   type ActorRef,
 } from "@mekakucity/actors";
@@ -460,6 +461,13 @@ export class DurableObjectActorRuntime extends ActorRuntime {
     return this.#core.actorContextOf(instance);
   }
 
+  registerEvent(instance: object, name: string, payload: unknown): void {
+    const actor = this.selfDescriptorOf(instance);
+    const context = this.#core.current("Emit actor event");
+    if (!context.frame) throw new NoActiveTransactionError("Emit actor event outside its owning actor");
+    context.frame.invocation.afterCommitBestEffort(() => this.emitEvent({ actor, name, payload }));
+  }
+
   async invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown> {
     const { value, version } = await this.#core.invokeRefAction(ref, actionName, args);
     this.observeRead(ref, version);
@@ -492,8 +500,10 @@ export const createHostRuntimeCore = (
   scope: string,
   contextProvider?: ActorContextProvider,
   onCommit?: (info: ActorCommitInfo) => void,
+  onEvent?: (info: ActorEventInfo) => void,
 ): RuntimeCore => {
   const runtime = new DurableObjectActorRuntime(binding, { scope, contextProvider });
   if (onCommit) runtime.onCommit(onCommit);
+  if (onEvent) runtime.onEvent(onEvent);
   return coreOf(runtime);
 };

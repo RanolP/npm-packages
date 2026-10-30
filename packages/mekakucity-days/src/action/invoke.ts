@@ -39,6 +39,7 @@ export const invokeActorAction = async (
   baseVersion = -1,
   carried?: unknown,
   origin?: ActorDescriptor,
+  validateResult?: (value: unknown) => unknown,
 ): Promise<ActionReply> => {
   const record = await root.backend.route(actorId);
   if (!record) throw new ActorKilledError(actorId);
@@ -78,7 +79,8 @@ export const invokeActorAction = async (
       let reply: ActionReply;
       try {
         const callArgs = hydrateRefs(memory, structuredClone(args));
-        const value = cloneActionResult(memory, record, actionName, await method.apply(record.instance, callArgs));
+        const actionValue = cloneActionResult(memory, record, actionName, await method.apply(record.instance, callArgs));
+        const value = validateResult ? validateResult(actionValue) : actionValue;
         // Queued before commitSegment so hold(tx) lands before a same-action release(actor) of the returned ref.
         for (const id of collectRefs(memory, value)) {
           holdForTx(frame, id);

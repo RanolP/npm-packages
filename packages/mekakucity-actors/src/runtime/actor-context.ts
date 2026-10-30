@@ -14,6 +14,14 @@ export type ActorAfterCommitHook = (info: ActorCommitInfo) => void | Promise<voi
 
 export type ActorCommitListener = (info: ActorCommitInfo) => void | Promise<void>;
 
+export interface ActorEventInfo {
+  readonly actor: ActorDescriptor;
+  readonly name: string;
+  readonly payload: unknown;
+}
+
+export type ActorEventListener = (info: ActorEventInfo) => void | Promise<void>;
+
 export interface ActorAfterCommit {
   (fn: ActorAfterCommitHook): void;
   /** Explicit alias for the at-most-once delivery semantics of after-commit hooks. */
@@ -106,6 +114,10 @@ export class ActorInvocationContext {
   mergeHooksInto(parent: ActorInvocationContext): void {
     parent.#rollbackHooks.push(...this.#rollbackHooks);
     parent.#afterCommitHooks.push(...this.#afterCommitHooks);
+  }
+
+  afterCommitBestEffort(fn: ActorAfterCommitHook): void {
+    this.#afterCommitHooks.push(fn);
   }
 
   async afterCommit(version: number, changed: string[]): Promise<void> {

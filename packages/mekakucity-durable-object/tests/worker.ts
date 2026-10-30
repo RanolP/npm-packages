@@ -24,7 +24,16 @@ const contextProvider: ActorContextProvider = {
   }),
 };
 
-export const ActorHost = createActorHost({ contextProvider });
+export const ActorHost = createActorHost({
+  contextProvider,
+  socket: {
+    accept: (request) => {
+      const requestId = request.headers.get("x-request-id") ?? undefined;
+      return { attachment: { requestId }, scope: requestId ?? "anonymous" };
+    },
+    carried: (attachment) => attachment,
+  },
+});
 
 export default {
   fetch(): Response {

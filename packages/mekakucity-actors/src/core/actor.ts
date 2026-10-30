@@ -24,6 +24,7 @@ const currentRuntimeForSelfRef = (): ActorRuntime => {
 export abstract class Actor<Self, Input> {
   protected readonly input: Input;
   declare protected readonly __actorInput: Input;
+  declare readonly events: object;
 
   constructor(input: Input) {
     this.input = input;
@@ -36,6 +37,10 @@ export abstract class Actor<Self, Input> {
       if (cause instanceof NoActiveActorRuntimeError) throw new ActorContextUnavailableError(undefined, { cause });
       throw cause;
     }
+  }
+
+  protected emit<Name extends keyof this["events"] & string>(name: Name, payload: this["events"][Name]): void {
+    ActorRuntime.current("Emit actor event").registerEvent(this, name, payload);
   }
 
   protected get asRef(): ActorSelfRef<Self> {

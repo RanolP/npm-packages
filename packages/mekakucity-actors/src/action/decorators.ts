@@ -5,6 +5,7 @@ import type { Cloneable, StructuredCloneable } from "../ref/types.js";
 export interface ActorMetadata {
   readonly state: Set<string>;
   readonly actions: Map<string, (...args: unknown[]) => unknown>;
+  readonly clientActions: Set<string>;
 }
 
 // Decorator transforms fall back to this key when Symbol.metadata is absent. tsc users must import
@@ -27,7 +28,7 @@ const metadataObjectOf = (context: { readonly name: string | symbol; readonly me
 const metadataForObject = (metadata: object): ActorMetadata => {
   const current = ownMetadata.get(metadata);
   if (current) return current;
-  const created: ActorMetadata = { state: new Set(), actions: new Map() };
+  const created: ActorMetadata = { state: new Set(), actions: new Map(), clientActions: new Set() };
   ownMetadata.set(metadata, created);
   return created;
 };
@@ -36,7 +37,7 @@ export const metadataFor = (instanceOrConstructor: object | Function): ActorMeta
   const ctor = typeof instanceOrConstructor === "function"
     ? instanceOrConstructor
     : instanceOrConstructor.constructor;
-  const result: ActorMetadata = { state: new Set(), actions: new Map() };
+  const result: ActorMetadata = { state: new Set(), actions: new Map(), clientActions: new Set() };
   const chain: Function[] = [];
   for (let current: Function | null = ctor; current && current !== Function.prototype; current = Object.getPrototypeOf(current)) {
     chain.unshift(current);
@@ -47,7 +48,11 @@ export const metadataFor = (instanceOrConstructor: object | Function): ActorMeta
     const own = metadata ? ownMetadata.get(metadata) : undefined;
     if (!own) continue;
     for (const key of own.state) result.state.add(key);
-    for (const [key, method] of own.actions) result.actions.set(key, method);
+    for (const [key, method] of own.actions) {
+      result.actions.set(key, method);
+      if (own.clientActions.has(key)) result.clientActions.add(key);
+      else result.clientActions.delete(key);
+    }
   }
   return result;
 };
@@ -86,7 +91,7 @@ export interface ActionDecorator {
   ): (this: This, ...args: Args) => Result;
 }
 
-export const action: ActionDecorator = <This extends object, Args extends unknown[], Result extends Promise<unknown>>(
+const decorateAction = <This extends object, Args extends unknown[], Result extends Promise<unknown>>(
   value: (this: This, ...args: Args) => Result,
   context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>,
 ): (this: This, ...args: Args) => Result => {
@@ -102,6 +107,16 @@ export const action: ActionDecorator = <This extends object, Args extends unknow
   actionNames.set(wrapped, name);
   metadataForObject(metadataObjectOf(context)).actions.set(name, value as (...args: unknown[]) => unknown);
   return wrapped;
+};
+
+export const action: ActionDecorator = decorateAction;
+
+export const clientAction: ActionDecorator = <This extends object, Args extends unknown[], Result extends Promise<unknown>>(
+  value: (this: This, ...args: Args) => Result,
+  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>,
+): (this: This, ...args: Args) => Result => {
+  metadataForObject(metadataObjectOf(context)).clientActions.add(String(context.name));
+  return decorateAction(value, context);
 };
 
 export const actionNameOf = (method: Function): string | undefined => actionNames.get(method);

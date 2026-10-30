@@ -2,7 +2,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Actor } from "../core/actor.js";
 import type { ActorInput, ActorRef } from "../ref/types.js";
 import { ActorRuntimeError, NoActiveActorRuntimeError } from "./errors.js";
-import type { ActorCommitInfo, ActorCommitListener, ActorContext } from "./actor-context.js";
+import type {
+  ActorCommitInfo,
+  ActorCommitListener,
+  ActorContext,
+  ActorEventInfo,
+  ActorEventListener,
+} from "./actor-context.js";
 
 export type ActorConstructor<T extends Actor<unknown, unknown>> = new (input: ActorInput<T>) => T;
 
@@ -57,6 +63,7 @@ const activeReadObservers = new AsyncLocalStorage<readonly ActorReadObserver[]>(
 
 export abstract class ActorRuntime {
   readonly #commitListeners = new Set<ActorCommitListener>();
+  readonly #eventListeners = new Set<ActorEventListener>();
 
   protected withActiveRuntime<Result>(work: () => Result): Result {
     return activeRuntime.run(this, work);
@@ -104,6 +111,27 @@ export abstract class ActorRuntime {
     }
   }
 
+  /**
+   * Subscribes to broadcast events emitted by actors hosted in this runtime's isolate.
+   * Invocation is synchronous, best-effort, and at most once. Returned promises are not awaited.
+   * Listener throws and rejections do not fail the action.
+   */
+  onEvent(listener: ActorEventListener): () => void {
+    this.#eventListeners.add(listener);
+    return () => this.#eventListeners.delete(listener);
+  }
+
+  protected emitEvent(info: ActorEventInfo): void {
+    for (const listener of this.#eventListeners) {
+      try {
+        const result: unknown = listener(info);
+        if (result instanceof Promise) result.catch(() => {});
+      } catch {
+        // Event listeners run after the action commits and cannot roll it back.
+      }
+    }
+  }
+
   abstract run<Result>(work: () => Result | Promise<Result>): Promise<Awaited<Result>>;
   abstract spawn<T extends Actor<unknown, unknown>>(
     Type: ActorConstructor<T>,
@@ -117,6 +145,9 @@ export abstract class ActorRuntime {
   abstract refreshValues<T extends Actor<unknown, unknown>>(ref: ActorRef<T> | ActorDescriptor): Promise<ActorRef<T>>;
   abstract selfDescriptorOf(instance: object): ActorDescriptor;
   abstract actorContextOf(instance: object): ActorContext;
+  registerEvent(_instance: object, _name: string, _payload: unknown): void {
+    throw new ActorRuntimeError("This actor runtime does not support broadcast events");
+  }
   abstract invokeRefAction(ref: ActorDescriptor, actionName: string, args: unknown[]): Promise<unknown>;
   abstract invokeLocalAction(instance: object, actionName: string, args: unknown[], run: () => unknown): unknown;
   abstract runDetached(
