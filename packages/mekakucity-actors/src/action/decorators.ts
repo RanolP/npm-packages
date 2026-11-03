@@ -7,6 +7,15 @@ export interface ActorMetadata {
   readonly actions: Map<string, (...args: unknown[]) => unknown>;
 }
 
+interface ActorPrivateStateAccessor {
+  readonly get: (instance: object) => unknown;
+  readonly set: (instance: object, value: unknown) => void;
+}
+
+interface InternalActorMetadata extends ActorMetadata {
+  readonly privateState: Map<string, ActorPrivateStateAccessor>;
+}
+
 // Decorator transforms fall back to this key when Symbol.metadata is absent. tsc users must import
 // @mekakucity/actors/polyfill before defining actor classes so tsc passes context.metadata.
 const metadataKey: symbol = (Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");
@@ -14,7 +23,7 @@ const metadataKey: symbol = (Symbol as { metadata?: symbol }).metadata ?? Symbol
 // Keyed by the class's own metadata object, which member decorators receive at class definition time, so a
 // class's members are known before (and without) constructing it: a ref built in an isolate that never hosts
 // the actor still gets every action.
-const ownMetadata = new WeakMap<object, ActorMetadata>();
+const ownMetadata = new WeakMap<object, InternalActorMetadata>();
 const actionNames = new WeakMap<Function, string>();
 
 const metadataObjectOf = (context: { readonly name: string | symbol; readonly metadata?: object }): object => {
@@ -24,30 +33,47 @@ const metadataObjectOf = (context: { readonly name: string | symbol; readonly me
   );
 };
 
-const metadataForObject = (metadata: object): ActorMetadata => {
+const metadataForObject = (metadata: object): InternalActorMetadata => {
   const current = ownMetadata.get(metadata);
   if (current) return current;
-  const created: ActorMetadata = { state: new Set(), actions: new Map() };
+  const created: InternalActorMetadata = { state: new Set(), privateState: new Map(), actions: new Map() };
   ownMetadata.set(metadata, created);
   return created;
 };
 
-export const metadataFor = (instanceOrConstructor: object | Function): ActorMetadata => {
+const ownMetadataChain = (instanceOrConstructor: object | Function): InternalActorMetadata[] => {
   const ctor = typeof instanceOrConstructor === "function"
     ? instanceOrConstructor
     : instanceOrConstructor.constructor;
-  const result: ActorMetadata = { state: new Set(), actions: new Map() };
   const chain: Function[] = [];
   for (let current: Function | null = ctor; current && current !== Function.prototype; current = Object.getPrototypeOf(current)) {
     chain.unshift(current);
   }
+  const result: InternalActorMetadata[] = [];
   for (const current of chain) {
     // A subclass without decorators of its own inherits Symbol.metadata, so only an own property counts.
     const metadata = Object.getOwnPropertyDescriptor(current, metadataKey)?.value;
     const own = metadata ? ownMetadata.get(metadata) : undefined;
-    if (!own) continue;
+    if (own) result.push(own);
+  }
+  return result;
+};
+
+export const metadataFor = (instanceOrConstructor: object | Function): ActorMetadata => {
+  const result: ActorMetadata = { state: new Set(), actions: new Map() };
+  for (const own of ownMetadataChain(instanceOrConstructor)) {
     for (const key of own.state) result.state.add(key);
     for (const [key, method] of own.actions) result.actions.set(key, method);
+  }
+  return result;
+};
+
+export const privateStateAccessorsFor = (
+  instanceOrConstructor: object | Function,
+): ReadonlyMap<string, ActorPrivateStateAccessor> => {
+  const result = new Map<string, ActorPrivateStateAccessor>();
+  for (const own of ownMetadataChain(instanceOrConstructor)) {
+    for (const [key, accessor] of own.privateState) result.set(key, accessor);
   }
   return result;
 };
@@ -56,7 +82,27 @@ export const state = <This extends object, Value>(
   _value: ClassAccessorDecoratorTarget<This, Value>,
   context: ClassAccessorDecoratorContext<This, Value>,
 ): ClassAccessorDecoratorResult<This, Value> => {
-  metadataForObject(metadataObjectOf(context)).state.add(String(context.name));
+  const metadataObject = metadataObjectOf(context);
+  const key = String(context.name);
+  if (context.private) {
+    for (
+      let parent = Object.getPrototypeOf(metadataObject);
+      parent;
+      parent = Object.getPrototypeOf(parent)
+    ) {
+      if (ownMetadata.get(parent)?.privateState.has(key)) {
+        throw new ActorRuntimeError(
+          `Private state key ${key} conflicts with an inherited key; private state keys must be unique across the class chain`,
+        );
+      }
+    }
+    metadataForObject(metadataObject).privateState.set(key, {
+      get: (instance) => context.access.get(instance as This),
+      set: (instance, value) => context.access.set(instance as This, value as Value),
+    });
+  } else {
+    metadataForObject(metadataObject).state.add(key);
+  }
   return {};
 };
 

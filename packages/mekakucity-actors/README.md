@@ -57,6 +57,23 @@ esbuild, Babel, oxc, and Vite users need no additional setup.
 
 Reading a getter through an `ActorRef` evaluates the class getter with the reference as `this`, so reads of `@state` fields and other getters use the reference's current snapshot. That `this` value contains only `@state` fields, getters, actions, `type`, and `id`; it does not contain `this.input`, private helpers, or fields without `@state`.
 
+### Keep durable state internal
+
+A private `@state` accessor is persisted and rolled back with public state, but it does not appear on `ActorRef`. Only code inside the actor class can read or write it.
+
+```ts
+@actor("todo-list")
+class TodoList extends Actor<TodoList, {}> {
+  @state accessor #items: string[] = [];
+
+  @action async add(item: string): Promise<void> {
+    this.#items = [...this.#items, item];
+  }
+}
+```
+
+Getters read through an `ActorRef` run with the reference as `this`, so they cannot read private state; return derived values from an `@action` or keep them in public `@state`.
+
 Calling an actor API outside `runtime.run(...)` throws `NoActiveActorRuntimeError`. A nested `run` on the same runtime joins the open transaction; a nested `run` on another runtime opens an isolated transaction owned by that runtime.
 
 ## Observe actor reads and commits

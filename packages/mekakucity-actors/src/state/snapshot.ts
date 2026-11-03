@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { metadataFor } from "../action/decorators.js";
+import { metadataFor, privateStateAccessorsFor } from "../action/decorators.js";
 import { ActorStateSerializationError } from "./errors.js";
 import { cloneOrThrow } from "./clone.js";
 
@@ -16,12 +16,36 @@ export interface ActorSnapshot {
   readonly data: Readonly<StateData>;
 }
 
+interface BoundStateAccessor {
+  readonly get: () => unknown;
+  readonly set: (value: unknown) => void;
+}
+
+const stateAccessors = (record: ActorStateRecord): Map<string, BoundStateAccessor> => {
+  const metadata = metadataFor(record.instance);
+  const instance = record.instance as Record<string, unknown>;
+  const accessors = new Map<string, BoundStateAccessor>();
+  for (const key of metadata.state) {
+    accessors.set(key, {
+      get: () => instance[key],
+      set: (value) => { instance[key] = value; },
+    });
+  }
+  for (const [key, accessor] of privateStateAccessorsFor(record.instance)) {
+    accessors.set(key, {
+      get: () => accessor.get(record.instance),
+      set: (value) => accessor.set(record.instance, value),
+    });
+  }
+  return accessors;
+};
+
 export const stateFields = (record: ActorStateRecord): string[] =>
-  [...metadataFor(record.instance).state];
+  [...stateAccessors(record).keys()];
 
 export const cloneState = (record: ActorStateRecord): StateData => {
   const data: StateData = {};
-  for (const key of stateFields(record)) data[key] = (record.instance as Record<string, unknown>)[key];
+  for (const [key, accessor] of stateAccessors(record)) data[key] = accessor.get();
   return cloneOrThrow(data, (cause) => new ActorStateSerializationError(record.id, cause));
 };
 
@@ -30,9 +54,9 @@ export const restoreState = (
   value: StateData,
   hydrate: (value: unknown) => unknown,
 ): void => {
-  for (const key of stateFields(record)) {
+  for (const [key, accessor] of stateAccessors(record)) {
     if (Object.hasOwn(value, key)) {
-      (record.instance as Record<string, unknown>)[key] = hydrate(value[key]);
+      accessor.set(hydrate(value[key]));
     }
   }
 };

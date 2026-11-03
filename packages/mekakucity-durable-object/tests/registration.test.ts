@@ -5,7 +5,7 @@ import { actorClassOf, actorTypeIdOf } from "@mekakucity/actors/runtime";
 import { describe, expect, test, vi } from "vitest";
 import { DurableObjectActorRuntime } from "../src/index.js";
 import { createHostRuntimeCore } from "../src/runtime.js";
-import { TallyActor } from "./registered-actors.js";
+import { PrivateCounterActor, TallyActor } from "./registered-actors.js";
 
 const newRuntime = (scope: string) => new DurableObjectActorRuntime(env.ACTOR_HOST, { scope });
 const stubOf = (ref: { id: string }) => env.ACTOR_HOST.get(env.ACTOR_HOST.idFromString(ref.id));
@@ -84,4 +84,24 @@ describe("@actor registration", () => {
     expect(typeof ref.after).toBe("function");
     expect(ref.before).toBeUndefined();
   });
+});
+
+// Regression: private-only writes were invisible to change detection, so they neither advanced the version nor
+// survived a host eviction.
+test("private-only state changes commit and survive host eviction", async () => {
+  const scope = crypto.randomUUID();
+  const runtime = newRuntime(scope);
+  const ref = await runtime.run(async () => {
+    const counter = await Actor.ofNamed(PrivateCounterActor, "stored").orSpawn(() => ({ count: 0 }));
+    expect(await counter.increment()).toBe(1);
+    return counter;
+  });
+
+  const committedVersion = await runInDurableObject(stubOf(ref), (_instance, state) =>
+    state.storage.kv.get<number>("version"));
+  expect(committedVersion).toBe(1);
+
+  await runInDurableObject(stubOf(ref), (_instance, state) => state.abort()).catch(() => {});
+
+  expect(await newRuntime(scope).run(() => ref.current())).toBe(1);
 });
