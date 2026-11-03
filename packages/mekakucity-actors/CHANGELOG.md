@@ -1,5 +1,11 @@
 # @mekakucity/actors
 
+## 0.7.0
+
+### Minor Changes
+
+- d86dc03: Support private durable state with TC39 private accessors such as `@state accessor #items`. Private state participates in snapshots, rollback, versioning, and change detection without appearing on `ActorRef` values or read observations.
+
 ## 0.6.1
 
 ### Patch Changes
