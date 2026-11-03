@@ -10,3 +10,17 @@ export class TallyActor extends Actor<TallyActor, { count: number }> {
     return this.count;
   }
 }
+
+@actor("PrivateCounter")
+export class PrivateCounterActor extends Actor<PrivateCounterActor, { count: number }> {
+  @state accessor #count = this.input.count;
+
+  @action async increment(): Promise<number> {
+    this.#count += 1;
+    return this.#count;
+  }
+
+  @action async current(): Promise<number> {
+    return this.#count;
+  }
+}
