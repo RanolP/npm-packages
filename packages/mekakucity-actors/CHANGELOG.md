@@ -1,5 +1,11 @@
 # @mekakucity/actors
 
+## 0.7.1
+
+### Patch Changes
+
+- de160b7: Preserve transaction hook registration ordering when overlapping nested actor invocations finish out of order.
+
 ## 0.7.0
 
 ### Minor Changes
