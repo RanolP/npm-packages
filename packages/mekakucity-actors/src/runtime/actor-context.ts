@@ -50,13 +50,42 @@ export interface ActorContextProvider<Carried = unknown> {
 }
 
 type Hook<Args extends unknown[] = []> = (...args: Args) => void | Promise<void>;
+type RegisteredHook<Args extends unknown[] = []> = {
+  readonly sequence: number;
+  readonly hook: Hook<Args>;
+};
+
+let nextHookSequence = 0;
+
+const mergeHooks = <Args extends unknown[]>(
+  left: readonly RegisteredHook<Args>[],
+  right: readonly RegisteredHook<Args>[],
+): RegisteredHook<Args>[] => {
+  const merged: RegisteredHook<Args>[] = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+
+  while (leftIndex < left.length && rightIndex < right.length) {
+    if (left[leftIndex].sequence < right[rightIndex].sequence) {
+      merged.push(left[leftIndex++]);
+    } else {
+      merged.push(right[rightIndex++]);
+    }
+  }
+
+  merged.push(...left.slice(leftIndex), ...right.slice(rightIndex));
+  return merged;
+};
 
 const describeError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-const runHooks = async <Args extends unknown[]>(hooks: readonly Hook<Args>[], ...args: Args): Promise<unknown[]> => {
+const runHooks = async <Args extends unknown[]>(
+  hooks: readonly RegisteredHook<Args>[],
+  ...args: Args
+): Promise<unknown[]> => {
   const errors: unknown[] = [];
-  for (const hook of hooks) {
+  for (const { hook } of hooks) {
     try {
       await hook(...args);
     } catch (error) {
@@ -68,8 +97,8 @@ const runHooks = async <Args extends unknown[]>(hooks: readonly Hook<Args>[], ..
 
 /** Runtime-owned, invocation-scoped context state. */
 export class ActorInvocationContext {
-  readonly #rollbackHooks: Hook[] = [];
-  readonly #afterCommitHooks: ActorAfterCommitHook[] = [];
+  #rollbackHooks: RegisteredHook[] = [];
+  #afterCommitHooks: RegisteredHook<[ActorCommitInfo]>[] = [];
   #built = false;
   #context: ActorContext | undefined;
   readonly #provider: ActorContextProvider | undefined;
@@ -89,13 +118,15 @@ export class ActorInvocationContext {
     if (!this.#provider) throw new ActorContextUnavailableError("No ActorContextProvider is configured");
     if (!this.#built) {
       const registerAfterCommit = (fn: ActorAfterCommitHook): void => {
-        this.#afterCommitHooks.push(fn);
+        this.#afterCommitHooks.push({ sequence: nextHookSequence++, hook: fn });
       };
       const afterCommit: ActorAfterCommit = Object.assign(registerAfterCommit, {
         bestEffort: registerAfterCommit,
       });
       this.#context = this.#provider.build(this.carried, {
-        onRollback: (fn) => this.#rollbackHooks.push(fn),
+        onRollback: (fn) => {
+          this.#rollbackHooks.push({ sequence: nextHookSequence++, hook: fn });
+        },
         afterCommit,
       }, this.#self, this.origin);
       this.#built = true;
@@ -104,8 +135,9 @@ export class ActorInvocationContext {
   }
 
   mergeHooksInto(parent: ActorInvocationContext): void {
-    parent.#rollbackHooks.push(...this.#rollbackHooks);
-    parent.#afterCommitHooks.push(...this.#afterCommitHooks);
+    // A child merged after its parent has settled still cannot run its hooks.
+    parent.#rollbackHooks = mergeHooks(parent.#rollbackHooks, this.#rollbackHooks);
+    parent.#afterCommitHooks = mergeHooks(parent.#afterCommitHooks, this.#afterCommitHooks);
   }
 
   async afterCommit(version: number, changed: string[]): Promise<void> {
