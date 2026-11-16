@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "rm -rf .fixture-build && tsc -p tsconfig.fixture.json && tsdown && rm -rf .fixture-build",
-    "test": "sh ./scripts/integration.sh"
+    "test": "sh -c 'pnpm build && cargo test' --"
   },
   "author": "RanolP <me@ranolp.dev>",
   "license": "MIT",
