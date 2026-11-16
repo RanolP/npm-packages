@@ -1,0 +1,1 @@
+{"extends":["//"],"tasks":{"test":{"inputs":["$TURBO_DEFAULT$","src/**","fixtures/*/index.ts","tests/**","Cargo.toml","Cargo.lock","tsdown.config.ts","tsconfig*.json"]}}}

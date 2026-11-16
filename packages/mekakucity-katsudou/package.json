@@ -1,0 +1,41 @@
+{
+  "name": "@mekakucity/katsudou",
+  "version": "0.0.0",
+  "private": true,
+  "description": "V8 isolate actor host for @mekakucity/actors",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf .fixture-build && tsc -p tsconfig.fixture.json && tsdown && rm -rf .fixture-build",
+    "test": "sh -c 'pnpm build && cargo test' --"
+  },
+  "author": "RanolP <me@ranolp.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mekakucity/actors": ">=0.0.0 <1"
+  },
+  "devDependencies": {
+    "@mekakucity/actors": "workspace:*",
+    "@types/node": "^24.0.1",
+    "tsdown": "^0.12.7",
+    "typescript": "catalog:"
+  },
+  "sideEffects": false,
+  "files": [
+    "src/",
+    "dist/"
+  ],
+  "keywords": [
+    "actor",
+    "actor-model",
+    "v8"
+  ]
+}
