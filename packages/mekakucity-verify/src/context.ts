@@ -162,6 +162,30 @@ class ContextHooks extends Actor<ContextHooks, {}> {
     return this.ctx.recordedAfterCommits();
   }
 
+  #releaseWaitingSibling: (() => void) | undefined;
+
+  // Returns version and changed only: an actor descriptor in a reply comes back as a live ref.
+  @action async recordThenWaitForSibling(): Promise<Omit<ActorCommitInfo, "actor">[]> {
+    this.nested = 3;
+    this.ctx.recordAfterCommit();
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.#releaseWaitingSibling = resolve;
+    await promise;
+    return this.ctx.recordedAfterCommits().map(({ version, changed }) => ({ version, changed }));
+  }
+
+  @action async recordThenCallRemote(target: ActorRef<ContextProbe>): Promise<Omit<ActorCommitInfo, "actor">[]> {
+    this.committed = 9;
+    this.ctx.recordAfterCommit();
+    await target.read();
+    this.#releaseWaitingSibling?.();
+    return this.ctx.recordedAfterCommits().map(({ version, changed }) => ({ version, changed }));
+  }
+
+  @action async recordInConcurrentSiblings(target: ActorRef<ContextProbe>): Promise<Omit<ActorCommitInfo, "actor">[][]> {
+    return Promise.all([this.recordThenWaitForSibling(), this.recordThenCallRemote(target)]);
+  }
+
   @action async reportRollback(): Promise<void> {
     this.committed = 4;
     this.ctx.reportCommitInfo();
@@ -325,6 +349,22 @@ export const actorContextSuite = (
         await expect(ref.recordBeforeNestedRemoteCall(target)).resolves.toEqual([
           { actor, version: 2, changed: ["committed", "nested"] },
         ]);
+      });
+    });
+
+    // Regression: a sibling's segment commit skipped hooks a concurrent same-actor sibling registered before it.
+    contextIt("runs a concurrent sibling's after-commit hook at the segment commit that follows its registration", async () => {
+      const provider: ActorContextProvider<ContextCarried> = {
+        carry: () => ({ requestId: "sibling-segment-hooks" }),
+        build: buildContext,
+      };
+      const runtime = createWithContext(provider);
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ContextHooks, {});
+        const target = await Actor.spawn(ContextProbe, {});
+        const segment = { version: 1, changed: ["committed", "nested"] };
+
+        await expect(ref.recordInConcurrentSiblings(target)).resolves.toEqual([[segment], [segment]]);
       });
     });
 

@@ -145,17 +145,17 @@ export class ActorInvocationContext {
   }
 
   /**
-   * Runs the after-commit hooks registered so far by one actor's open invocations, ordered innermost first
-   * (`invocations[0]` is the running frame, the last entry its top frame), after a segment commit made their
-   * work durable. Each hook runs once: it leaves its invocation, so neither the final commit nor a later
-   * rollback sees it again. Failures are kept on the top invocation and reported by its final afterCommit.
+   * Runs, in registration order, the after-commit hooks registered so far by every open invocation of one
+   * actor's segment (`invocations[0]` is its top frame), after a segment commit made their work durable.
+   * Each hook runs once: it leaves its invocation, so neither the final commit nor a later rollback sees it
+   * again. Failures are kept on the top invocation and reported by its final afterCommit.
    */
   static async afterSegmentCommit(
     invocations: readonly ActorInvocationContext[],
     version: number,
     changed: string[],
   ): Promise<void> {
-    const top = invocations.at(-1);
+    const top = invocations[0];
     if (!top) return;
     let hooks: RegisteredHook<[ActorCommitInfo]>[] = [];
     for (const invocation of invocations) {

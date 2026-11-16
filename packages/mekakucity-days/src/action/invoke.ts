@@ -84,6 +84,7 @@ export const invokeActorAction = async (
           holdForTx(frame, id);
         }
         await commitSegment(memory, frame, true);
+        frame.segment.frames.delete(frame);
         mergeFrame(memory, frame);
         settleFrameSpawns(frame);
         await drainHolderOps(root);
@@ -99,6 +100,7 @@ export const invokeActorAction = async (
           snapshot,
         };
       } catch (error) {
+        frame.segment.frames.delete(frame);
         await rollbackAction(memory, frame);
         discardFrameSpawns(frame);
         rollbackOutbox(root, frame.outbox);

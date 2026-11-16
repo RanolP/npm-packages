@@ -60,17 +60,15 @@ export const commitSegment = async (
 };
 
 /**
- * Commits the running segment before the action calls out, then runs the after-commit hooks that this frame
- * and its same-actor enclosing frames registered so far, so a notification reaches subscribers before the
- * call. The final commit never runs those hooks again.
+ * Commits the running segment before the action calls out, then runs the after-commit hooks that every open
+ * frame of that segment registered so far (the top frame, the running frame and concurrent same-actor
+ * siblings), so a notification reaches subscribers before the call. The final commit never runs those hooks
+ * again.
  */
 export const commitSegmentBeforeCall = async (memory: RuntimeMemory, frame: ActionFrame): Promise<void> => {
   await commitSegment(memory, frame, false, true);
-  const frames: ActionFrame[] = [];
-  for (let current: ActionFrame | undefined = frame; current?.segment === frame.segment; current = current.parent) {
-    frames.push(current);
-  }
-  const changed = new Set(frames.toReversed().flatMap((current) => [...current.changed]));
+  const frames = [...frame.segment.frames];
+  const changed = new Set(frames.flatMap((current) => [...current.changed]));
   await ActorInvocationContext.afterSegmentCommit(
     frames.map((current) => current.invocation),
     frame.record.version,

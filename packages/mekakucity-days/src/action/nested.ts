@@ -43,6 +43,7 @@ export const invokeNested = async (
         settleFrameSpawns(frame);
         await drainHolderOps(frame.root);
       } catch (error) {
+        frame.segment.frames.delete(frame);
         await rollbackAction(memory, frame);
         for (const key of changedAtEntry) parent.changed.add(key);
         discardFrameSpawns(frame);
@@ -51,6 +52,7 @@ export const invokeNested = async (
         await frame.invocation.afterRollback(error);
         throw error;
       }
+      frame.segment.frames.delete(frame);
       frame.invocation.mergeHooksInto(parent.invocation);
       return hydrateRefs(memory, value);
     },

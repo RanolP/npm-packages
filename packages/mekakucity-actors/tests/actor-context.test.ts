@@ -99,7 +99,7 @@ test("segment after-commit hooks run once in registration order and their failur
     throw new Error("segment hook failed");
   });
 
-  await ActorInvocationContext.afterSegmentCommit([nested, top], 1, ["value"]);
+  await ActorInvocationContext.afterSegmentCommit([top, nested], 1, ["value"]);
   expect(calls).toEqual(["H1", "H2"]);
 
   nested.mergeHooksInto(top);

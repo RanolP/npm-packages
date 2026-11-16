@@ -443,7 +443,7 @@ export class ActorHost extends DurableObject<Env> {
     origin?: ActorDescriptor,
   ): ActionFrame {
     const state = cloneState(actor);
-    return {
+    const frame: ActionFrame = {
       id: `frame_${crypto.randomUUID()}`,
       root,
       parent,
@@ -458,12 +458,14 @@ export class ActorHost extends DurableObject<Env> {
       initialState: structuredClone(state),
       segment: parent?.segment.actorId === actor.id
         ? parent.segment
-        : { actorId: actor.id, baseline: state },
+        : { actorId: actor.id, baseline: state, frames: new Set() },
       spawnedIds: new Set(),
       outbox: [],
       pendingOps: [],
       changed: new Set(),
     };
+    frame.segment.frames.add(frame);
+    return frame;
   }
 
   #stateRefs(actor: HostedActor, state: StateData): Set<string> {
@@ -509,8 +511,10 @@ export class ActorHost extends DurableObject<Env> {
           messages: frame.outbox.splice(0),
           inTransaction: settleInbox && (() => this.#settleInbox(settleInbox, root)),
         });
+        frame.segment.frames.delete(frame);
         result = { value, spawnedIds: parentFrameId ? [...frame.spawnedIds] : [] };
       } catch (error) {
+        frame.segment.frames.delete(frame);
         await this.#rollback(actor, frame, [...discardSpawnOps(frame.spawnedIds, frame.id), ...frame.outbox.flatMap((message) => messageReleaseOps(message))]);
         await frame.invocation.afterRollback(error);
         throw error;
@@ -555,11 +559,13 @@ export class ActorHost extends DurableObject<Env> {
         for (const id of frame.spawnedIds) parent.spawnedIds.add(id);
         await this.#emit([...holds, ...spawns]);
       } catch (error) {
+        frame.segment.frames.delete(frame);
         await this.#rollback(actor, frame, [...discardSpawnOps(frame.spawnedIds, frame.id), ...frame.outbox.flatMap((message) => messageReleaseOps(message))]);
         for (const key of changedAtEntry) parent.changed.add(key);
         await frame.invocation.afterRollback(error);
         throw error;
       }
+      frame.segment.frames.delete(frame);
       frame.invocation.mergeHooksInto(parent.invocation);
       return core.hydrate(result);
     });
@@ -616,14 +622,13 @@ export class ActorHost extends DurableObject<Env> {
   }
 
   /**
-   * Runs the after-commit hooks that this frame and its enclosing frames registered before the segment
-   * commit, so a notification reaches subscribers before the action calls out. The final commit never runs
-   * them again.
+   * Runs the after-commit hooks that every open frame of the segment (the top frame, the running frame and
+   * concurrent same-actor siblings) registered before the segment commit, so a notification reaches
+   * subscribers before the action calls out. The final commit never runs them again.
    */
   async #afterSegmentCommit(actor: HostedActor, frame: ActionFrame): Promise<void> {
-    const frames: ActionFrame[] = [];
-    for (let current: ActionFrame | undefined = frame; current; current = current.parent) frames.push(current);
-    const changed = new Set(frames.toReversed().flatMap((current) => [...current.changed]));
+    const frames = [...frame.segment.frames];
+    const changed = new Set(frames.flatMap((current) => [...current.changed]));
     await ActorInvocationContext.afterSegmentCommit(
       frames.map((current) => current.invocation),
       actor.version,

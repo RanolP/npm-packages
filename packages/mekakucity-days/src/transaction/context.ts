@@ -34,7 +34,8 @@ export interface ActionFrame {
   readonly outbox: PendingOutboxMessage[];
   readonly pendingOps: HolderOp[];
   readonly changed: Set<string>;
-  readonly segment: { baseline: StateData };
+  /** Shared by an actor's top frame and its same-actor nested frames; `frames` lists the open ones, outermost first. */
+  readonly segment: { baseline: StateData; readonly frames: Set<ActionFrame> };
 }
 
 export interface ExecutionContext {

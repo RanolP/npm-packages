@@ -24,7 +24,7 @@
   "author": "RanolP <me@ranolp.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "@mekakucity/actors": ">=0.0.0 <1"
+    "@mekakucity/actors": ">=0.7.2 <1"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.7",
