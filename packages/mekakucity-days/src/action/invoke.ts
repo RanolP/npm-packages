@@ -15,7 +15,7 @@ import { rollbackOutbox } from "../outbox/delivery.js";
 import { discardFrameSpawns, drainHolderOps, holdForTx, settleFrameSpawns } from "../ref/lifecycle.js";
 import { collectRefs, hydrateRefs } from "../ref/surface.js";
 import type { RuntimeMemory } from "../runtime/memory.js";
-import { commitSegment, rollbackAction } from "../state/commit.js";
+import { commitSegment, commitSegmentBeforeCall, rollbackAction } from "../state/commit.js";
 import {
   cacheBackendSnapshot,
   cloneActionResult,
@@ -66,7 +66,7 @@ export const invokeActorAction = async (
   }
 
   if (inheritedChain.has(actorId)) throw new ActorReentrancyError(actorId);
-  if (parent) await commitSegment(memory, parent, false, true);
+  if (parent) await commitSegmentBeforeCall(memory, parent);
   const chain = new Set(inheritedChain);
   chain.add(actorId);
 

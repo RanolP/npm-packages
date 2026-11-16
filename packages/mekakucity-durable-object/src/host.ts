@@ -409,7 +409,10 @@ export class ActorHost extends DurableObject<Env> {
       id: actor.id,
       type: actor.meta.type,
       instance: actor.instance,
-      commitSegment: (frame, preserve) => this.#commit(actor, frame, { force: false, preserve }),
+      commitSegment: async (frame, preserve) => {
+        await this.#commit(actor, frame, { force: false, preserve });
+        await this.#afterSegmentCommit(actor, frame);
+      },
       invokeNested: (parent, actionName, run) => this.#runNested(actor, parent, actionName, run),
     };
   }
@@ -512,7 +515,7 @@ export class ActorHost extends DurableObject<Env> {
         await frame.invocation.afterRollback(error);
         throw error;
       }
-      /** Committed hooks are not durable; isolate failure after commit can skip them, so they are at-most-once. */
+      /** Hooks still registered run now; they are not durable, so an isolate failure after the commit can skip them. */
       try {
         await frame.invocation.afterCommit(actor.version, [...frame.changed]);
       } catch (error) {
@@ -610,6 +613,22 @@ export class ActorHost extends DurableObject<Env> {
     frame.segment.baseline = next.state;
     if (bump) actor.core.commit({ actor: { type: actor.meta.type, id: actor.id }, version, changed });
     await this.#afterWrite();
+  }
+
+  /**
+   * Runs the after-commit hooks that this frame and its enclosing frames registered before the segment
+   * commit, so a notification reaches subscribers before the action calls out. The final commit never runs
+   * them again.
+   */
+  async #afterSegmentCommit(actor: HostedActor, frame: ActionFrame): Promise<void> {
+    const frames: ActionFrame[] = [];
+    for (let current: ActionFrame | undefined = frame; current; current = current.parent) frames.push(current);
+    const changed = new Set(frames.toReversed().flatMap((current) => [...current.changed]));
+    await ActorInvocationContext.afterSegmentCommit(
+      frames.map((current) => current.invocation),
+      actor.version,
+      [...changed],
+    );
   }
 
   async #rollback(actor: HostedActor, frame: ActionFrame, extra: HolderOp[]): Promise<void> {

@@ -1,5 +1,6 @@
 import { ActorStateSerializationError } from "@mekakucity/actors";
 import {
+  ActorInvocationContext,
   changedStateFields,
   cloneOrThrow,
   createSnapshot,
@@ -56,6 +57,25 @@ export const commitSegment = async (
   }
   frame.segment.baseline = next.state;
   await updateStateHolders(memory, frame, next.state, preserveDroppedRefs);
+};
+
+/**
+ * Commits the running segment before the action calls out, then runs the after-commit hooks that this frame
+ * and its same-actor enclosing frames registered so far, so a notification reaches subscribers before the
+ * call. The final commit never runs those hooks again.
+ */
+export const commitSegmentBeforeCall = async (memory: RuntimeMemory, frame: ActionFrame): Promise<void> => {
+  await commitSegment(memory, frame, false, true);
+  const frames: ActionFrame[] = [];
+  for (let current: ActionFrame | undefined = frame; current?.segment === frame.segment; current = current.parent) {
+    frames.push(current);
+  }
+  const changed = new Set(frames.toReversed().flatMap((current) => [...current.changed]));
+  await ActorInvocationContext.afterSegmentCommit(
+    frames.map((current) => current.invocation),
+    frame.record.version,
+    [...changed],
+  );
 };
 
 export const rollbackAction = async (memory: RuntimeMemory, frame: ActionFrame): Promise<void> => {
