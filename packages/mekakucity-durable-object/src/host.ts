@@ -409,7 +409,10 @@ export class ActorHost extends DurableObject<Env> {
       id: actor.id,
       type: actor.meta.type,
       instance: actor.instance,
-      commitSegment: (frame, preserve) => this.#commit(actor, frame, { force: false, preserve }),
+      commitSegment: async (frame, preserve) => {
+        await this.#commit(actor, frame, { force: false, preserve });
+        await this.#afterSegmentCommit(actor, frame);
+      },
       invokeNested: (parent, actionName, run) => this.#runNested(actor, parent, actionName, run),
     };
   }
@@ -440,7 +443,7 @@ export class ActorHost extends DurableObject<Env> {
     origin?: ActorDescriptor,
   ): ActionFrame {
     const state = cloneState(actor);
-    return {
+    const frame: ActionFrame = {
       id: `frame_${crypto.randomUUID()}`,
       root,
       parent,
@@ -455,12 +458,14 @@ export class ActorHost extends DurableObject<Env> {
       initialState: structuredClone(state),
       segment: parent?.segment.actorId === actor.id
         ? parent.segment
-        : { actorId: actor.id, baseline: state },
+        : { actorId: actor.id, baseline: state, frames: new Set() },
       spawnedIds: new Set(),
       outbox: [],
       pendingOps: [],
       changed: new Set(),
     };
+    frame.segment.frames.add(frame);
+    return frame;
   }
 
   #stateRefs(actor: HostedActor, state: StateData): Set<string> {
@@ -506,13 +511,15 @@ export class ActorHost extends DurableObject<Env> {
           messages: frame.outbox.splice(0),
           inTransaction: settleInbox && (() => this.#settleInbox(settleInbox, root)),
         });
+        frame.segment.frames.delete(frame);
         result = { value, spawnedIds: parentFrameId ? [...frame.spawnedIds] : [] };
       } catch (error) {
+        frame.segment.frames.delete(frame);
         await this.#rollback(actor, frame, [...discardSpawnOps(frame.spawnedIds, frame.id), ...frame.outbox.flatMap((message) => messageReleaseOps(message))]);
         await frame.invocation.afterRollback(error);
         throw error;
       }
-      /** Committed hooks are not durable; isolate failure after commit can skip them, so they are at-most-once. */
+      /** Hooks still registered run now; they are not durable, so an isolate failure after the commit can skip them. */
       try {
         await frame.invocation.afterCommit(actor.version, [...frame.changed]);
       } catch (error) {
@@ -552,11 +559,13 @@ export class ActorHost extends DurableObject<Env> {
         for (const id of frame.spawnedIds) parent.spawnedIds.add(id);
         await this.#emit([...holds, ...spawns]);
       } catch (error) {
+        frame.segment.frames.delete(frame);
         await this.#rollback(actor, frame, [...discardSpawnOps(frame.spawnedIds, frame.id), ...frame.outbox.flatMap((message) => messageReleaseOps(message))]);
         for (const key of changedAtEntry) parent.changed.add(key);
         await frame.invocation.afterRollback(error);
         throw error;
       }
+      frame.segment.frames.delete(frame);
       frame.invocation.mergeHooksInto(parent.invocation);
       return core.hydrate(result);
     });
@@ -610,6 +619,21 @@ export class ActorHost extends DurableObject<Env> {
     frame.segment.baseline = next.state;
     if (bump) actor.core.commit({ actor: { type: actor.meta.type, id: actor.id }, version, changed });
     await this.#afterWrite();
+  }
+
+  /**
+   * Runs the after-commit hooks that every open frame of the segment (the top frame, the running frame and
+   * concurrent same-actor siblings) registered before the segment commit, so a notification reaches
+   * subscribers before the action calls out. The final commit never runs them again.
+   */
+  async #afterSegmentCommit(actor: HostedActor, frame: ActionFrame): Promise<void> {
+    const frames = [...frame.segment.frames];
+    const changed = new Set(frames.flatMap((current) => [...current.changed]));
+    await ActorInvocationContext.afterSegmentCommit(
+      frames.map((current) => current.invocation),
+      actor.version,
+      [...changed],
+    );
   }
 
   async #rollback(actor: HostedActor, frame: ActionFrame, extra: HolderOp[]): Promise<void> {

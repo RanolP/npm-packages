@@ -85,3 +85,24 @@ test("nested rollback hooks run in reverse registration order when parent and ch
 
   expect(calls).toEqual(["P2", "C1"]);
 });
+
+// Regression: a segment hook that failed was dropped, and a later final commit could run the same hook twice.
+test("segment after-commit hooks run once in registration order and their failures reject the final afterCommit", async () => {
+  const calls: string[] = [];
+  const { invocation: top, hooks: topHooks } = openInvocation("actor");
+  const { invocation: nested, hooks: nestedHooks } = openInvocation("actor");
+  topHooks.afterCommit(() => {
+    calls.push("H1");
+  });
+  nestedHooks.afterCommit.bestEffort(() => {
+    calls.push("H2");
+    throw new Error("segment hook failed");
+  });
+
+  await ActorInvocationContext.afterSegmentCommit([top, nested], 1, ["value"]);
+  expect(calls).toEqual(["H1", "H2"]);
+
+  nested.mergeHooksInto(top);
+  await expect(top.afterCommit(1, ["value"])).rejects.toThrow("afterCommit hook failure: segment hook failed");
+  expect(calls).toEqual(["H1", "H2"]);
+});

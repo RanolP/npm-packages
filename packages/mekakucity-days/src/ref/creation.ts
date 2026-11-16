@@ -11,7 +11,7 @@ import {
   txHolder,
 } from "@mekakucity/actors/runtime";
 import type { RuntimeMemory } from "../runtime/memory.js";
-import { commitSegment, updateStateHolders } from "../state/commit.js";
+import { commitSegmentBeforeCall, updateStateHolders } from "../state/commit.js";
 import { cacheBackendSnapshot, cacheSnapshot } from "../state/snapshot.js";
 import { currentExecution, type ActionFrame } from "../transaction/context.js";
 import { recordInput, type ActorRecord } from "./in-memory-store.js";
@@ -69,7 +69,7 @@ export const createActor = async <T extends Actor<unknown, unknown>>(
     txHolder: txHolder(context.root.id, initialFrameId),
     startVersion: 0,
     initialState: first.state,
-    segment: { baseline: first.state },
+    segment: { baseline: first.state, frames: new Set() },
     spawnedIds: new Set(),
     outbox: [],
     pendingOps: [],
@@ -88,7 +88,7 @@ export const spawnActor = async <T extends Actor<unknown, unknown>>(
 ): Promise<ActorRef<T>> => {
   const named = key !== undefined;
   const context = currentExecution(memory, named ? "Actor.ofNamed(...).orSpawn" : "Actor.spawn");
-  if (context.frame) await commitSegment(memory, context.frame, false, true);
+  if (context.frame) await commitSegmentBeforeCall(memory, context.frame);
   return createActor(memory, Type, input, named, key);
 };
 
@@ -98,7 +98,7 @@ export const resolveNamedActor = async <T extends Actor<unknown, unknown>>(
   key: string,
 ): Promise<ActorRef<T> | null> => {
   const context = currentExecution(memory, "Actor.ofNamed(...).orNull");
-  if (context.frame) await commitSegment(memory, context.frame, false, true);
+  if (context.frame) await commitSegmentBeforeCall(memory, context.frame);
   const type = typeName(Type);
   memory.knownTypes.set(type, Type);
   const id = await context.root.backend.lookupNamed(type, key);

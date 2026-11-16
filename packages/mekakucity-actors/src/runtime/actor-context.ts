@@ -24,8 +24,10 @@ export interface ActorTransactionHooks {
   /** Registers work that runs in reverse registration order after this action rolls back. */
   onRollback(fn: () => void | Promise<void>): void;
   /**
-   * Registers work that runs in registration order after this action commits.
-   * Durable Object runtimes execute these hooks at most once: an isolate failure after the commit can skip them.
+   * Registers work that runs once, in registration order, after the first commit of this action that follows
+   * registration: the segment commit before a call to another actor, a spawn, a named lookup or a refresh, or the
+   * final commit. Durable Object runtimes execute these hooks at most once: an isolate failure after the commit
+   * can skip them.
    */
   afterCommit: ActorAfterCommit;
 }
@@ -99,6 +101,8 @@ const runHooks = async <Args extends unknown[]>(
 export class ActorInvocationContext {
   #rollbackHooks: RegisteredHook[] = [];
   #afterCommitHooks: RegisteredHook<[ActorCommitInfo]>[] = [];
+  /** Failures of hooks that already ran after a segment commit, reported by this invocation's final afterCommit. */
+  #segmentHookErrors: unknown[] = [];
   #built = false;
   #context: ActorContext | undefined;
   readonly #provider: ActorContextProvider | undefined;
@@ -140,9 +144,31 @@ export class ActorInvocationContext {
     parent.#afterCommitHooks = mergeHooks(parent.#afterCommitHooks, this.#afterCommitHooks);
   }
 
+  /**
+   * Runs, in registration order, the after-commit hooks registered so far by every open invocation of one
+   * actor's segment (`invocations[0]` is its top frame), after a segment commit made their work durable.
+   * Each hook runs once: it leaves its invocation, so neither the final commit nor a later rollback sees it
+   * again. Failures are kept on the top invocation and reported by its final afterCommit.
+   */
+  static async afterSegmentCommit(
+    invocations: readonly ActorInvocationContext[],
+    version: number,
+    changed: string[],
+  ): Promise<void> {
+    const top = invocations[0];
+    if (!top) return;
+    let hooks: RegisteredHook<[ActorCommitInfo]>[] = [];
+    for (const invocation of invocations) {
+      hooks = mergeHooks(hooks, invocation.#afterCommitHooks);
+      invocation.#afterCommitHooks = [];
+    }
+    if (hooks.length === 0) return;
+    top.#segmentHookErrors.push(...await runHooks(hooks, { actor: top.#self, version, changed }));
+  }
+
   async afterCommit(version: number, changed: string[]): Promise<void> {
     const info: ActorCommitInfo = { actor: this.#self, version, changed };
-    const errors = await runHooks([...this.#afterCommitHooks], info);
+    const errors = [...this.#segmentHookErrors, ...await runHooks([...this.#afterCommitHooks], info)];
     if (errors.length > 0) {
       throw new ActorTransactionHookError(
         "afterCommit",

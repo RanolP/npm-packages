@@ -15,7 +15,7 @@ export const makeFrame = (
 ): ActionFrame => {
   const state = cloneState(record);
   const id = `frame_${++memory.sequence.frame}`;
-  return {
+  const frame: ActionFrame = {
     id,
     record,
     root,
@@ -31,12 +31,14 @@ export const makeFrame = (
     txHolder: parent?.record === record ? parent.txHolder : txHolder(root.id, id),
     startVersion: record.version,
     initialState: structuredClone(state),
-    segment: parent?.record === record ? parent.segment : { baseline: state },
+    segment: parent?.record === record ? parent.segment : { baseline: state, frames: new Set() },
     spawnedIds: new Set(),
     outbox: [],
     pendingOps: [],
     changed: new Set(),
   };
+  frame.segment.frames.add(frame);
+  return frame;
 };
 
 export const mergeFrame = (_memory: RuntimeMemory, frame: ActionFrame): void => {

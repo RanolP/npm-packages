@@ -18,6 +18,8 @@ declare module "@mekakucity/actors" {
     readonly origin: ActorDescriptor | undefined;
     registerConformanceHooks(): void;
     reportCommitInfo(): void;
+    recordAfterCommit(): void;
+    recordedAfterCommits(): ActorCommitInfo[];
   }
 }
 
@@ -25,19 +27,29 @@ export interface ContextCarried {
   readonly requestId?: string;
 }
 
-const buildContext: ActorContextProvider<ContextCarried>["build"] = (carried, hooks, _self, origin) => ({
-  requestId: carried?.requestId,
-  origin,
-  registerConformanceHooks() {
-    hooks.onRollback(() => { throw new Error("rollback hook ran"); });
-    hooks.afterCommit(() => { throw new Error("afterCommit hook ran"); });
-  },
-  reportCommitInfo() {
-    hooks.afterCommit.bestEffort((info) => {
-      throw new Error(`commit-info:${JSON.stringify(info)}`);
-    });
-  },
-});
+const buildContext: ActorContextProvider<ContextCarried>["build"] = (carried, hooks, _self, origin) => {
+  const afterCommits: ActorCommitInfo[] = [];
+  return {
+    requestId: carried?.requestId,
+    origin,
+    registerConformanceHooks() {
+      hooks.onRollback(() => { throw new Error("rollback hook ran"); });
+      hooks.afterCommit(() => { throw new Error("afterCommit hook ran"); });
+    },
+    reportCommitInfo() {
+      hooks.afterCommit.bestEffort((info) => {
+        throw new Error(`commit-info:${JSON.stringify(info)}`);
+      });
+    },
+    recordAfterCommit() {
+      hooks.afterCommit.bestEffort((info) => {
+        afterCommits.push(info);
+        if (afterCommits.length > 1) throw new Error("after-commit hook ran twice");
+      });
+    },
+    recordedAfterCommits: () => [...afterCommits],
+  };
+};
 
 @actor("verify/context/Probe")
 class ContextProbe extends Actor<ContextProbe, {}> {
@@ -129,6 +141,49 @@ class ContextHooks extends Actor<ContextHooks, {}> {
     this.committed = 6;
     await this.writeNestedThenFail(target).catch(() => undefined);
     this.ctx.reportCommitInfo();
+  }
+
+  @action async recordBeforeRemoteCall(target: ActorRef<ContextProbe>): Promise<ActorCommitInfo[]> {
+    this.committed = 7;
+    this.ctx.recordAfterCommit();
+    await target.read();
+    return this.ctx.recordedAfterCommits();
+  }
+
+  @action async readThrough(target: ActorRef<ContextProbe>): Promise<void> {
+    this.nested = 2;
+    await target.read();
+  }
+
+  @action async recordBeforeNestedRemoteCall(target: ActorRef<ContextProbe>): Promise<ActorCommitInfo[]> {
+    this.committed = 8;
+    this.ctx.recordAfterCommit();
+    await this.readThrough(target);
+    return this.ctx.recordedAfterCommits();
+  }
+
+  #releaseWaitingSibling: (() => void) | undefined;
+
+  // Returns version and changed only: an actor descriptor in a reply comes back as a live ref.
+  @action async recordThenWaitForSibling(): Promise<Omit<ActorCommitInfo, "actor">[]> {
+    this.nested = 3;
+    this.ctx.recordAfterCommit();
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.#releaseWaitingSibling = resolve;
+    await promise;
+    return this.ctx.recordedAfterCommits().map(({ version, changed }) => ({ version, changed }));
+  }
+
+  @action async recordThenCallRemote(target: ActorRef<ContextProbe>): Promise<Omit<ActorCommitInfo, "actor">[]> {
+    this.committed = 9;
+    this.ctx.recordAfterCommit();
+    await target.read();
+    this.#releaseWaitingSibling?.();
+    return this.ctx.recordedAfterCommits().map(({ version, changed }) => ({ version, changed }));
+  }
+
+  @action async recordInConcurrentSiblings(target: ActorRef<ContextProbe>): Promise<Omit<ActorCommitInfo, "actor">[][]> {
+    return Promise.all([this.recordThenWaitForSibling(), this.recordThenCallRemote(target)]);
   }
 
   @action async reportRollback(): Promise<void> {
@@ -273,6 +328,43 @@ export const actorContextSuite = (
         );
         expect(rollbackError.message).toContain("reported action failed");
         expect(rollbackError.message).not.toContain("commit-info:");
+      });
+    });
+
+    // Regression: a @channel emit registered before a remote call reached subscribers only when the action returned.
+    contextIt("runs an after-commit hook registered before a remote call once, before the action returns", async () => {
+      const provider: ActorContextProvider<ContextCarried> = {
+        carry: () => ({ requestId: "segment-hooks" }),
+        build: buildContext,
+      };
+      const runtime = createWithContext(provider);
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ContextHooks, {});
+        const target = await Actor.spawn(ContextProbe, {});
+        const actor = { type: ref.type, id: ref.id };
+
+        await expect(ref.recordBeforeRemoteCall(target)).resolves.toEqual([
+          { actor, version: 1, changed: ["committed"] },
+        ]);
+        await expect(ref.recordBeforeNestedRemoteCall(target)).resolves.toEqual([
+          { actor, version: 2, changed: ["committed", "nested"] },
+        ]);
+      });
+    });
+
+    // Regression: a sibling's segment commit skipped hooks a concurrent same-actor sibling registered before it.
+    contextIt("runs a concurrent sibling's after-commit hook at the segment commit that follows its registration", async () => {
+      const provider: ActorContextProvider<ContextCarried> = {
+        carry: () => ({ requestId: "sibling-segment-hooks" }),
+        build: buildContext,
+      };
+      const runtime = createWithContext(provider);
+      await runtime.run(async () => {
+        const ref = await Actor.spawn(ContextHooks, {});
+        const target = await Actor.spawn(ContextProbe, {});
+        const segment = { version: 1, changed: ["committed", "nested"] };
+
+        await expect(ref.recordInConcurrentSiblings(target)).resolves.toEqual([[segment], [segment]]);
       });
     });
 

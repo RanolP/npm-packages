@@ -14,7 +14,7 @@ import {
   isActorDescriptor,
 } from "@mekakucity/actors/runtime";
 import type { RuntimeMemory } from "../runtime/memory.js";
-import { commitSegment } from "../state/commit.js";
+import { commitSegmentBeforeCall } from "../state/commit.js";
 import { cacheBackendSnapshot } from "../state/snapshot.js";
 import { currentExecution } from "../transaction/context.js";
 
@@ -65,7 +65,7 @@ export const refreshActorValues = async <T extends Actor<unknown, unknown>>(
   ref: ActorRef<T> | ActorDescriptor,
 ): Promise<{ ref: ActorRef<T>; version: number }> => {
   const context = currentExecution(memory, "Actor.refreshValues");
-  if (context.frame) await commitSegment(memory, context.frame, false, true);
+  if (context.frame) await commitSegmentBeforeCall(memory, context.frame);
   const normalized = ensureRef<T>(memory, ref);
   const record = await context.root.backend.route(normalized.id);
   if (!record) throw new ActorKilledError(normalized.id);
